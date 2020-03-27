@@ -475,7 +475,7 @@ impl RangeProof {
     /// Verifies multiple aggregated rangeproofs with a single multiexponentiation
     pub fn batch_verify<T: RngCore + CryptoRng>(
         rng: &mut T,
-        proofs: &[RangeProof],
+        proofs: &[&RangeProof],
         transcripts: &mut [Transcript],
         value_commitments: &[&[CompressedRistretto]],
         bp_gens: &BulletproofGens,
@@ -869,7 +869,7 @@ mod tests {
             }
             assert!(super::RangeProof::batch_verify(
                 &mut rand::thread_rng(),
-                proofs.as_slice(),
+                &proofs.iter().collect::<Vec<_>>(),
                 transcripts.as_mut_slice(),
                 commitments.as_slice(),
                 &bp_gens, &pc_gens, n).is_ok());
