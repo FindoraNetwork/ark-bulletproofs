@@ -9,8 +9,6 @@ extern crate rand;
 use self::rand::thread_rng;
 use alloc::vec::Vec;
 
-use core::iter;
-
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::{IsIdentity, VartimeMultiscalarMul};
@@ -25,6 +23,8 @@ use crate::util;
 use rand_core::{CryptoRng, RngCore};
 use serde::de::Visitor;
 use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
+use std::iter;
+use std::ops::AddAssign;
 
 // Modules for MPC protocol
 
@@ -353,6 +353,45 @@ impl RangeProof {
     ) -> Result<(), ProofError> {
         let m = value_commitments.len();
 
+        let scalars = self.compute_verification_scalars_with_rng(
+            bp_gens,
+            transcript, value_commitments, n, rng
+        )?;
+
+        let mega_check = RistrettoPoint::optional_multiscalar_mul(
+            scalars,
+            iter::once(self.A.decompress())
+              .chain(iter::once(self.S.decompress()))
+              .chain(iter::once(self.T_1.decompress()))
+              .chain(iter::once(self.T_2.decompress()))
+              .chain(self.ipp_proof.L_vec.iter().map(|L| L.decompress()))
+              .chain(self.ipp_proof.R_vec.iter().map(|R| R.decompress()))
+              .chain(value_commitments.iter().map(|V| V.decompress()))
+              .chain(iter::once(Some(pc_gens.B_blinding)))
+              .chain(iter::once(Some(pc_gens.B)))
+              .chain(bp_gens.G(n, m).map(|&x| Some(x)))
+              .chain(bp_gens.H(n, m).map(|&x| Some(x))),
+        )
+          .ok_or_else(|| ProofError::VerificationError)?;
+
+        if mega_check.is_identity() {
+            Ok(())
+        } else {
+            Err(ProofError::VerificationError)
+        }
+
+    }
+    /// Compute multiexponentiation scalars needed to verify this proofs
+    pub fn compute_verification_scalars_with_rng<T: RngCore + CryptoRng>(
+        &self,
+        bp_gens: &BulletproofGens,
+        transcript: &mut Transcript,
+        value_commitments: &[CompressedRistretto],
+        n: usize,
+        rng: &mut T,
+    ) -> Result<Vec<Scalar>, ProofError> {
+        let m = value_commitments.len();
+
         // First, replay the "interactive" protocol using the proof
         // data to recompute all challenges.
         if !(n == 8 || n == 16 || n == 32 || n == 64) {
@@ -395,7 +434,7 @@ impl RangeProof {
         // Challenge value for batching statements to be verified
         let c = Scalar::random(rng);
 
-        let (x_sq, x_inv_sq, s) = self.ipp_proof.verification_scalars(n * m, transcript)?;
+        let (mut x_sq, mut x_inv_sq, s) = self.ipp_proof.verification_scalars(n * m, transcript)?;
         let s_inv = s.iter().rev();
 
         let a = self.ipp_proof.a;
@@ -409,46 +448,123 @@ impl RangeProof {
             .flat_map(|exp_z| powers_of_2.iter().map(move |exp_2| exp_2 * exp_z))
             .collect();
 
-        let g = s.iter().map(|s_i| minus_z - a * s_i);
-        let h = s_inv
+        let mut g: Vec<Scalar> = s.iter().map(|s_i| minus_z - a * s_i).collect();
+        let mut h: Vec<Scalar> = s_inv
             .zip(util::exp_iter(y.invert()))
             .zip(concat_z_and_2.iter())
-            .map(|((s_i_inv, exp_y_inv), z_and_2)| z + exp_y_inv * (zz * z_and_2 - b * s_i_inv));
+            .map(|((s_i_inv, exp_y_inv), z_and_2)| z + exp_y_inv * (zz * z_and_2 - b * s_i_inv)).collect();
 
-        let value_commitment_scalars = util::exp_iter(z).take(m).map(|z_exp| c * zz * z_exp);
+        let mut value_commitment_scalars: Vec<Scalar> = util::exp_iter(z).take(m).map(|z_exp| c * zz * z_exp).collect();
         let basepoint_scalar = w * (self.t_x - a * b) + c * (delta(n, m, &y, &z) - self.t_x);
 
-        let mega_check = RistrettoPoint::optional_multiscalar_mul(
-            iter::once(Scalar::one())
-                .chain(iter::once(x))
-                .chain(iter::once(c * x))
-                .chain(iter::once(c * x * x))
-                .chain(x_sq.iter().cloned())
-                .chain(x_inv_sq.iter().cloned())
-                .chain(iter::once(-self.e_blinding - c * self.t_x_blinding))
-                .chain(iter::once(basepoint_scalar))
-                .chain(g)
-                .chain(h)
-                .chain(value_commitment_scalars),
-            iter::once(self.A.decompress())
-                .chain(iter::once(self.S.decompress()))
-                .chain(iter::once(self.T_1.decompress()))
-                .chain(iter::once(self.T_2.decompress()))
-                .chain(self.ipp_proof.L_vec.iter().map(|L| L.decompress()))
-                .chain(self.ipp_proof.R_vec.iter().map(|R| R.decompress()))
-                .chain(iter::once(Some(pc_gens.B_blinding)))
-                .chain(iter::once(Some(pc_gens.B)))
-                .chain(bp_gens.G(n, m).map(|&x| Some(x)))
-                .chain(bp_gens.H(n, m).map(|&x| Some(x)))
-                .chain(value_commitments.iter().map(|V| V.decompress())),
-        )
-        .ok_or_else(|| ProofError::VerificationError)?;
+        let mut scalars = vec![
+            Scalar::one(), // A
+            x, // S
+            c * x, // T_1
+            c * x * x]; //T_2
+        scalars.append(&mut x_sq); // L_vec TODO avoid append, better chaining iterators
+        scalars.append(&mut x_inv_sq); // R_vec
+        scalars.append(&mut value_commitment_scalars); //Value com
+        scalars.push(-self.e_blinding - c * self.t_x_blinding); // B_blinding
+        scalars.push(basepoint_scalar); // B
+        scalars.append(&mut g); // G_vec
+        scalars.append(&mut h); // H_vec
+        Ok(scalars)
+    }
 
-        if mega_check.is_identity() {
-            Ok(())
-        } else {
-            Err(ProofError::VerificationError)
+    /// Verifies multiple aggregated rangeproofs with a single multiexponentiation
+    pub fn batch_verify<T: RngCore + CryptoRng>(
+        rng: &mut T,
+        proofs: &[RangeProof],
+        transcripts: &mut [Transcript],
+        value_commitments: &[&[CompressedRistretto]],
+        bp_gens: &BulletproofGens,
+        pc_gens: &PedersenGens,
+        n: usize) -> Result<(), ProofError> {
+        let mut all_scalars = vec![];
+        let mut random_scalars = vec![];
+        let mut max_m = 0;
+        for ((proof, transcript), value_commitment) in proofs
+          .iter()
+          .zip(transcripts.iter_mut()).zip(value_commitments.iter()) {
+            let instance_scalars =
+              proof.compute_verification_scalars_with_rng(bp_gens, transcript, value_commitment, n, rng)?;
+            let mut rng = transcript.build_rng().finalize(&mut thread_rng());
+            random_scalars.push(Scalar::random(&mut rng));
+            all_scalars.push((instance_scalars, value_commitment.len()));
         }
+        let mut all_scaled_scalars = vec![];
+        for ((scalars, m_i), rand_scalar) in all_scalars.iter().zip(random_scalars.iter()) {
+            let scaled_scalars: Vec<Scalar> = scalars.iter().map(|s| s * rand_scalar).collect();
+            all_scaled_scalars.push((scaled_scalars, *m_i));
+            if *m_i > max_m {
+                max_m = *m_i;
+            }
+        }
+        let grouped_scalars = Self::group_scalars(all_scaled_scalars.as_slice(), n, max_m);
+
+        let mut elems = vec![];
+        for (proof, value_commitments) in proofs.iter().zip(value_commitments) {
+            elems.push(proof.A.decompress());
+            elems.push(proof.S.decompress());
+            elems.push(proof.T_1.decompress());
+            elems.push(proof.T_2.decompress());
+            for L in proof.ipp_proof.L_vec.iter() {
+                elems.push(L.decompress());
+            }
+            for R in proof.ipp_proof.R_vec.iter() {
+                elems.push(R.decompress());
+            }
+            for V in value_commitments.iter(){
+                elems.push(V.decompress())
+            }
+        }
+        elems.push(Some(pc_gens.B_blinding));
+        elems.push(Some(pc_gens.B));
+        for G in bp_gens.G(n, max_m) {
+            elems.push(Some(*G));
+        }
+        for H in bp_gens.H(n, max_m) {
+            elems.push(Some(*H));
+        }
+        let mega_check = RistrettoPoint::optional_multiscalar_mul(
+            grouped_scalars,
+            elems
+        ).ok_or_else(|| ProofError::VerificationError)?;
+        if !mega_check.is_identity() {
+            return Err(ProofError::VerificationError);
+        }
+        Ok(())
+    }
+
+    fn group_scalars(all_scalars: &[(Vec<Scalar>, usize)], n: usize, max_m: usize) -> Vec<Scalar>{
+        let mut agg_scalars = vec![];
+        let mut b_blind_scalars = Scalar::from(0u8);
+        let mut b_scalars = Scalar::from(0u8);
+        let mut g_scalars = vec![Scalar::from(0u8); n * max_m];
+        let mut h_scalars = vec![Scalar::from(0u8); n * max_m];
+
+        for (instance_scalars, m_i) in all_scalars {
+            let N_i = *m_i * n; // size of this instance
+            let lgN = (N_i as u64).trailing_zeros() as usize; // size of L and R vecs
+            // A,S,T1,T2 (4 elements) and L_vec, R_vec (lgN elemens each) + V (m_i elements)
+            let k_i = 4usize + 2usize*lgN + *m_i; // number of elements unique to this instance
+            for j in 0..k_i{
+                agg_scalars.push(*instance_scalars.get(j as usize).unwrap());
+            }
+            b_blind_scalars.add_assign(&instance_scalars[k_i]);
+            b_scalars.add_assign(&instance_scalars[k_i+1]);
+            for i in k_i + 2..k_i + 2 + N_i {
+                g_scalars[i - k_i - 2] += instance_scalars[i];
+                h_scalars[i - k_i - 2] += instance_scalars[N_i + i];
+            }
+        }
+        agg_scalars.push(b_blind_scalars);
+        agg_scalars.push(b_scalars);
+        agg_scalars.append(&mut g_scalars);
+        agg_scalars.append(&mut h_scalars);
+
+        agg_scalars
     }
 
     /// Verifies an aggregated rangeproof for the given value commitments.
@@ -537,6 +653,7 @@ impl RangeProof {
         })
     }
 }
+
 
 impl Serialize for RangeProof {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -683,6 +800,82 @@ mod tests {
         }
     }
 
+    /// Given a bitsize `n`, test the following:
+    ///
+    /// 1. Generate `m` random values and create a proof they are all in range;
+    /// 2. Serialize to wire format;
+    /// 3. Deserialize from wire format;
+    /// 4. Verify the proof.
+    fn singleparty_create_and_verify_helper_batch(n: usize, m: &[usize]) {
+        // Split the test into two scopes, so that it's explicit what
+        // data is shared between the prover and the verifier.
+
+        // Both prover and verifier have access to the generators and the proof
+        let max_bitsize = n;
+        let max_parties = m.iter().fold(0, |ac, m_i| ac.max(*m_i) );
+        let pc_gens = PedersenGens::default();
+        let bp_gens = BulletproofGens::new(max_bitsize, max_parties);
+
+        let mut proofs_bytes = vec![];
+        let mut all_value_commitments = vec![];
+
+        for m_i in m{
+            // Prover's scope
+            let mut transcript = Transcript::new(b"AggregatedRangeProofTest");
+            let (proof_bytes, value_commitments) = {
+                use rand::Rng;
+                let mut rng = rand::thread_rng();
+
+                // 0. Create witness data
+                let (min, max) = (0u64, ((1u128 << n) - 1) as u64);
+                let values: Vec<u64> = (0..*m_i).map(|_| rng.gen_range(min, max)).collect();
+                let blindings: Vec<Scalar> = (0..*m_i).map(|_| Scalar::random(&mut rng)).collect();
+
+                // 1. Create the proof
+                let (proof, value_commitments) = RangeProof::prove_multiple(
+                    &bp_gens,
+                    &pc_gens,
+                    &mut transcript,
+                    &values,
+                    &blindings,
+                    n,
+                )
+                  .unwrap();
+
+                // 2. Return serialized proof and value commitments
+                (bincode::serialize(&proof).unwrap(), value_commitments)
+            };
+            proofs_bytes.push(proof_bytes);
+            all_value_commitments.push(value_commitments);
+        }
+
+        // Verifier's scope
+        {
+            let mut transcripts = vec![];
+            let mut proofs = vec![];
+            let mut commitments = vec![];
+            for (proof_bytes, instance_commitments) in proofs_bytes.iter().zip(all_value_commitments.iter()) {
+                // 3. Deserialize
+
+                let proof: RangeProof = bincode::deserialize(&proof_bytes).unwrap();
+
+                // 4. Verify with the same customization label as above
+                let transcript = Transcript::new(b"AggregatedRangeProofTest");
+
+                proofs.push(proof);
+                transcripts.push(transcript);
+                commitments.push(instance_commitments.as_slice());
+
+            }
+            assert!(super::RangeProof::batch_verify(
+                &mut rand::thread_rng(),
+                proofs.as_slice(),
+                transcripts.as_mut_slice(),
+                commitments.as_slice(),
+                &bp_gens, &pc_gens, n).is_ok());
+        }
+    }
+
     #[test]
     fn create_and_verify_n_32_m_1() {
         singleparty_create_and_verify_helper(32, 1);
@@ -721,6 +914,16 @@ mod tests {
     #[test]
     fn create_and_verify_n_64_m_8() {
         singleparty_create_and_verify_helper(64, 8);
+    }
+
+    #[test]
+    fn create_and_verify_n_32_batch() {
+        singleparty_create_and_verify_helper_batch(32, &[2, 4, 2, 8]);
+    }
+
+    #[test]
+    fn create_and_verify_n_64_batch() {
+        singleparty_create_and_verify_helper_batch(32, &[16, 8, 2, 4, 32]);
     }
 
     #[test]
