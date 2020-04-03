@@ -537,3 +537,15 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         Ok(self.transcript)
     }
 }
+
+/// Batch verification of R1CS proofs
+pub fn batch_verify<'a, I>(instances: I, pc_gens: &PedersenGens, bp_gens: &BulletproofGens)
+    -> Result<(), R1CSError>
+where I: IntoIterator<Item = (Verifier<&'a mut Transcript>, &'a R1CSProof)>
+{
+    for (verifier, proof) in instances.into_iter() {
+        println!("HELLO");
+        verifier.verify(proof, pc_gens, bp_gens)?;
+    }
+    Ok(())
+}

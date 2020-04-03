@@ -452,3 +452,62 @@ fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
     // Verifier verifies proof
     verifier.verify(&proof, &pc_gens, &bp_gens)
 }
+
+
+#[test]
+fn batch_range_proof_gadget() {
+    let values = [0u64, 2, 3, (1<<16)-1, 10, 20, 30];
+    assert!(batch_range_proof_helper(&values, 16).is_ok());
+
+    let values = [(1u64<<16), 2, 3, 10, 20, 30];
+    assert!(batch_range_proof_helper(&values, 16).is_err());
+
+    let values = [0u64, 2, 3, 10, 20, 30, (1<<16)];
+    assert!(batch_range_proof_helper(&values, 16).is_err());
+
+}
+
+fn batch_range_proof_helper(v_vals: &[u64], n: usize) -> Result<(), R1CSError> {
+    // Common
+    let pc_gens = PedersenGens::default();
+    let bp_gens = BulletproofGens::new(128, 1);
+
+    let mut proofs = vec![];
+    let mut commitments = vec![];
+
+    for v in v_vals {
+        // Prover's scope
+        let (proof, commitment) = {
+            // Prover makes a `ConstraintSystem` instance representing a range proof gadget
+            let mut prover_transcript = Transcript::new(b"RangeProofTest");
+            let mut rng = rand::thread_rng();
+
+            let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
+
+            let (com, var) = prover.commit(Scalar::from(*v), Scalar::random(&mut rng));
+            assert!(range_proof(&mut prover, var.into(), Some(*v), n).is_ok());
+
+            let proof = prover.prove(&bp_gens)?;
+            (proof, com)
+        };
+        proofs.push(proof);
+        commitments.push(commitment);
+    }
+
+    let mut verifier_transcripts = vec![Transcript::new(b"RangeProofTest"); commitments.len()];
+    let mut verifiers = vec![];
+    for (commitment, transcript) in commitments.iter().zip(verifier_transcripts.iter_mut()) {
+        let mut verifier = Verifier::new(transcript);
+
+        // Verifier makes a `ConstraintSystem` instance representing a merge gadget
+        let var = verifier.commit(*commitment);
+
+        // Verifier adds constraints to the constraint system
+        assert!(range_proof(&mut verifier, var.into(), None, n).is_ok());
+
+        verifiers.push(verifier);
+    }
+
+    let a = verifiers.into_iter().zip(proofs.iter());
+    batch_verify(a, &pc_gens, &bp_gens)
+}
