@@ -15,6 +15,7 @@ use super::{
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::transcript::TranscriptProtocol;
+use std::array::FixedSizeArray;
 
 /// A [`ConstraintSystem`] implementation for use by the verifier.
 ///
@@ -324,28 +325,26 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         }
     }
 
-    /// Consume this `VerifierCS` and attempt to verify the supplied `proof`.
-    /// The `pc_gens` and `bp_gens` are generators for Pedersen commitments and
-    /// Bulletproofs vector commitments, respectively.  The
-    /// [`BulletproofGens`] should have `gens_capacity` greater than
-    /// the number of multiplication constraints that will eventually
-    /// be added into the constraint system.
-    pub fn verify(
-        self,
-        proof: &R1CSProof,
-        pc_gens: &PedersenGens,
-        bp_gens: &BulletproofGens,
-    ) -> Result<(), R1CSError> {
-        self.verify_and_return_transcript(proof, pc_gens, bp_gens)
-            .map(|_| ())
-    }
-    /// Same as `verify`, but also returns the transcript back to the user.
-    pub fn verify_and_return_transcript(
-        mut self,
-        proof: &R1CSProof,
-        pc_gens: &PedersenGens,
-        bp_gens: &BulletproofGens,
-    ) -> Result<T, R1CSError> {
+    // Get scalars for single multiexponentiation verification
+    // Order is
+    // proof.A_I1
+    // proof.A_O1
+    // proof.S1
+    // proof.A_I2
+    // proof.A_O2
+    // proof.S2
+    // self.V
+    // T_1, T3, T4, T5, T6
+    // pc_gens.B
+    // pc_gens.B_blinding
+    // gens.G(padded_n).map(|&G_i| Some(G_i)))
+    // gens.H(padded_n).map(|&H_i| Some(H_i)))
+    // proof.ipp_proof.L_vec.iter().map(|L_i| L_i.decompress()))
+    // proof.ipp_proof.R_vec
+    pub(super) fn verification_scalars(mut self,
+                          proof: &R1CSProof,
+                          bp_gens: &BulletproofGens)
+    -> Result<Vec<Scalar>, R1CSError>{
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -406,57 +405,57 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
         // Get IPP variables
         let (u_sq, u_inv_sq, s) = proof
-            .ipp_proof
-            .verification_scalars(padded_n, self.transcript.borrow_mut())
-            .map_err(|_| R1CSError::VerificationError)?;
+          .ipp_proof
+          .verification_scalars(padded_n, self.transcript.borrow_mut())
+          .map_err(|_| R1CSError::VerificationError)?;
 
         let a = proof.ipp_proof.a;
         let b = proof.ipp_proof.b;
 
         let y_inv = y.invert();
         let y_inv_vec = util::exp_iter(y_inv)
-            .take(padded_n)
-            .collect::<Vec<Scalar>>();
+          .take(padded_n)
+          .collect::<Vec<Scalar>>();
         let yneg_wR = wR
-            .into_iter()
-            .zip(y_inv_vec.iter())
-            .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
-            .chain(iter::repeat(Scalar::zero()).take(pad))
-            .collect::<Vec<Scalar>>();
+          .into_iter()
+          .zip(y_inv_vec.iter())
+          .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
+          .chain(iter::repeat(Scalar::zero()).take(pad))
+          .collect::<Vec<Scalar>>();
 
         let delta = inner_product(&yneg_wR[0..n], &wL);
 
         let u_for_g = iter::repeat(Scalar::one())
-            .take(n1)
-            .chain(iter::repeat(u).take(n2 + pad));
+          .take(n1)
+          .chain(iter::repeat(u).take(n2 + pad));
         let u_for_h = u_for_g.clone();
 
         // define parameters for P check
         let g_scalars = yneg_wR
-            .iter()
-            .zip(u_for_g)
-            .zip(s.iter().take(padded_n))
-            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i));
+          .iter()
+          .zip(u_for_g)
+          .zip(s.iter().take(padded_n))
+          .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)).collect_vec();
 
         let h_scalars = y_inv_vec
-            .iter()
-            .zip(u_for_h)
-            .zip(s.iter().rev().take(padded_n))
-            .zip(wL.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
-            .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
-            .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
-                u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
-            });
+          .iter()
+          .zip(u_for_h)
+          .zip(s.iter().rev().take(padded_n))
+          .zip(wL.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
+          .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
+          .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
+              u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
+          }).collect_vec();
 
         // Create a `TranscriptRng` from the transcript. The verifier
         // has no witness data to commit, so this just mixes external
         // randomness into the existing transcript.
         use rand::thread_rng;
         let mut rng = self
-            .transcript
-            .borrow_mut()
-            .build_rng()
-            .finalize(&mut thread_rng());
+          .transcript
+          .borrow_mut()
+          .build_rng()
+          .finalize(&mut thread_rng());
         let r = Scalar::random(&mut rng);
 
         let xx = x * x;
@@ -465,25 +464,49 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
         // group the T_scalars and T_points together
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
+
+        let mut scalars = vec![xx, xxx, u*x, u * xx,  u * xxx];
+        for wVi in wV.iter() {
+            scalars.push(wVi * rxx);
+        }
+        scalars.extend_from_slice(&T_scalars);
+        scalars.push(w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x));
+        scalars.push(-proof.e_blinding - r * proof.t_x_blinding);
+        scalars.extend_from_slice(&g_scalars);
+        scalars.extend_from_slice(&h_scalars);
+        scalars.extend_from_slice(&u_sq);
+        scalars.extend_from_slice(&u_inv_sq);
+
+        Ok(scalars)
+    }
+
+    /// Consume this `VerifierCS` and attempt to verify the supplied `proof`.
+    /// The `pc_gens` and `bp_gens` are generators for Pedersen commitments and
+    /// Bulletproofs vector commitments, respectively.  The
+    /// [`BulletproofGens`] should have `gens_capacity` greater than
+    /// the number of multiplication constraints that will eventually
+    /// be added into the constraint system.
+    pub fn verify(
+        self,
+        proof: &R1CSProof,
+        pc_gens: &PedersenGens,
+        bp_gens: &BulletproofGens,
+    ) -> Result<(), R1CSError> {
+        self.verify_and_return_transcript(proof, pc_gens, bp_gens)
+            .map(|_| ())
+    }
+    /// Same as `verify`, but also returns the transcript back to the user.
+    pub fn verify_and_return_transcript(
+        mut self,
+        proof: &R1CSProof,
+        pc_gens: &PedersenGens,
+        bp_gens: &BulletproofGens,
+    ) -> Result<T, R1CSError> {
+        let scalars = self.verify_scalars(proof, bp_gens)?;
         let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
 
         let mega_check = RistrettoPoint::optional_multiscalar_mul(
-            iter::once(x) // A_I1
-                .chain(iter::once(xx)) // A_O1
-                .chain(iter::once(xxx)) // S1
-                .chain(iter::once(u * x)) // A_I2
-                .chain(iter::once(u * xx)) // A_O2
-                .chain(iter::once(u * xxx)) // S2
-                .chain(wV.iter().map(|wVi| wVi * rxx)) // V
-                .chain(T_scalars.iter().cloned()) // T_points
-                .chain(iter::once(
-                    w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x),
-                )) // B
-                .chain(iter::once(-proof.e_blinding - r * proof.t_x_blinding)) // B_blinding
-                .chain(g_scalars) // G
-                .chain(h_scalars) // H
-                .chain(u_sq.iter().cloned()) // ipp_proof.L_vec
-                .chain(u_inv_sq.iter().cloned()), // ipp_proof.R_vec
+            scalars,
             iter::once(proof.A_I1.decompress())
                 .chain(iter::once(proof.A_O1.decompress()))
                 .chain(iter::once(proof.S1.decompress()))
