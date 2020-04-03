@@ -15,7 +15,6 @@ use super::{
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::transcript::TranscriptProtocol;
-use std::array::FixedSizeArray;
 
 /// A [`ConstraintSystem`] implementation for use by the verifier.
 ///
@@ -344,7 +343,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     pub(super) fn verification_scalars(mut self,
                           proof: &R1CSProof,
                           bp_gens: &BulletproofGens)
-    -> Result<Vec<Scalar>, R1CSError>{
+    -> Result<(Self, Vec<Scalar>), R1CSError>{
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -375,8 +374,6 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         if bp_gens.gens_capacity < padded_n {
             return Err(R1CSError::InvalidGeneratorsLength);
         }
-        // We are performing a single-party circuit proof, so party index is 0.
-        let gens = bp_gens.share(0);
 
         // These points are the identity in the 1-phase unrandomized case.
         transcript.append_point(b"A_I2", &proof.A_I2);
@@ -431,13 +428,13 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         let u_for_h = u_for_g.clone();
 
         // define parameters for P check
-        let g_scalars = yneg_wR
+        let g_scalars: Vec<_> = yneg_wR
           .iter()
           .zip(u_for_g)
           .zip(s.iter().take(padded_n))
-          .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)).collect_vec();
+          .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)).collect();
 
-        let h_scalars = y_inv_vec
+        let h_scalars: Vec<_> = y_inv_vec
           .iter()
           .zip(u_for_h)
           .zip(s.iter().rev().take(padded_n))
@@ -445,7 +442,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
           .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
           .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
               u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
-          }).collect_vec();
+          }).collect();
 
         // Create a `TranscriptRng` from the transcript. The verifier
         // has no witness data to commit, so this just mixes external
@@ -465,7 +462,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         // group the T_scalars and T_points together
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
 
-        let mut scalars = vec![xx, xxx, u*x, u * xx,  u * xxx];
+        let mut scalars = vec![x, xx, xxx, u*x, u * xx,  u * xxx];
         for wVi in wV.iter() {
             scalars.push(wVi * rxx);
         }
@@ -477,7 +474,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         scalars.extend_from_slice(&u_sq);
         scalars.extend_from_slice(&u_inv_sq);
 
-        Ok(scalars)
+        Ok((self, scalars))
     }
 
     /// Consume this `VerifierCS` and attempt to verify the supplied `proof`.
@@ -502,9 +499,16 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         pc_gens: &PedersenGens,
         bp_gens: &BulletproofGens,
     ) -> Result<T, R1CSError> {
-        let scalars = self.verify_scalars(proof, bp_gens)?;
+        let (verifier, scalars) = self.verification_scalars(proof, bp_gens)?;
+        self = verifier;
         let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
 
+        // We are performing a single-party circuit proof, so party index is 0.
+        let gens = bp_gens.share(0);
+
+        let padded_n = self.num_vars.next_power_of_two();
+
+        use std::iter;
         let mega_check = RistrettoPoint::optional_multiscalar_mul(
             scalars,
             iter::once(proof.A_I1.decompress())
