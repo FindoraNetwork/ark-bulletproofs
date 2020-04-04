@@ -4,7 +4,7 @@ use core::borrow::BorrowMut;
 use core::mem;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::VartimeMultiscalarMul;
+use curve25519_dalek::traits::{Identity, MultiscalarMul, VartimeMultiscalarMul};
 use merlin::Transcript;
 
 use super::{
@@ -15,6 +15,7 @@ use super::{
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::transcript::TranscriptProtocol;
+use rand_core::{CryptoRng, RngCore};
 
 /// A [`ConstraintSystem`] implementation for use by the verifier.
 ///
@@ -326,6 +327,10 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
     // Get scalars for single multiexponentiation verification
     // Order is
+    // pc_gens.B
+    // pc_gens.B_blinding
+    // gens.G_vec
+    // gens.H_vec
     // proof.A_I1
     // proof.A_O1
     // proof.S1
@@ -334,16 +339,13 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     // proof.S2
     // self.V
     // T_1, T3, T4, T5, T6
-    // pc_gens.B
-    // pc_gens.B_blinding
-    // gens.G(padded_n).map(|&G_i| Some(G_i)))
-    // gens.H(padded_n).map(|&H_i| Some(H_i)))
     // proof.ipp_proof.L_vec.iter().map(|L_i| L_i.decompress()))
     // proof.ipp_proof.R_vec
-    pub(super) fn verification_scalars(mut self,
-                          proof: &R1CSProof,
-                          bp_gens: &BulletproofGens)
-    -> Result<(Self, Vec<Scalar>), R1CSError>{
+    pub(super) fn verification_scalars(
+        mut self,
+        proof: &R1CSProof,
+        bp_gens: &BulletproofGens,
+    ) -> Result<(Self, Vec<Scalar>), R1CSError> {
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -402,57 +404,59 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
         // Get IPP variables
         let (u_sq, u_inv_sq, s) = proof
-          .ipp_proof
-          .verification_scalars(padded_n, self.transcript.borrow_mut())
-          .map_err(|_| R1CSError::VerificationError)?;
+            .ipp_proof
+            .verification_scalars(padded_n, self.transcript.borrow_mut())
+            .map_err(|_| R1CSError::VerificationError)?;
 
         let a = proof.ipp_proof.a;
         let b = proof.ipp_proof.b;
 
         let y_inv = y.invert();
         let y_inv_vec = util::exp_iter(y_inv)
-          .take(padded_n)
-          .collect::<Vec<Scalar>>();
+            .take(padded_n)
+            .collect::<Vec<Scalar>>();
         let yneg_wR = wR
-          .into_iter()
-          .zip(y_inv_vec.iter())
-          .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
-          .chain(iter::repeat(Scalar::zero()).take(pad))
-          .collect::<Vec<Scalar>>();
+            .into_iter()
+            .zip(y_inv_vec.iter())
+            .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
+            .chain(iter::repeat(Scalar::zero()).take(pad))
+            .collect::<Vec<Scalar>>();
 
         let delta = inner_product(&yneg_wR[0..n], &wL);
 
         let u_for_g = iter::repeat(Scalar::one())
-          .take(n1)
-          .chain(iter::repeat(u).take(n2 + pad));
+            .take(n1)
+            .chain(iter::repeat(u).take(n2 + pad));
         let u_for_h = u_for_g.clone();
 
         // define parameters for P check
         let g_scalars: Vec<_> = yneg_wR
-          .iter()
-          .zip(u_for_g)
-          .zip(s.iter().take(padded_n))
-          .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i)).collect();
+            .iter()
+            .zip(u_for_g)
+            .zip(s.iter().take(padded_n))
+            .map(|((yneg_wRi, u_or_1), s_i)| u_or_1 * (x * yneg_wRi - a * s_i))
+            .collect();
 
         let h_scalars: Vec<_> = y_inv_vec
-          .iter()
-          .zip(u_for_h)
-          .zip(s.iter().rev().take(padded_n))
-          .zip(wL.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
-          .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
-          .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
-              u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
-          }).collect();
+            .iter()
+            .zip(u_for_h)
+            .zip(s.iter().rev().take(padded_n))
+            .zip(wL.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
+            .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
+            .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
+                u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
+            })
+            .collect();
 
         // Create a `TranscriptRng` from the transcript. The verifier
         // has no witness data to commit, so this just mixes external
         // randomness into the existing transcript.
         use rand::thread_rng;
         let mut rng = self
-          .transcript
-          .borrow_mut()
-          .build_rng()
-          .finalize(&mut thread_rng());
+            .transcript
+            .borrow_mut()
+            .build_rng()
+            .finalize(&mut thread_rng());
         let r = Scalar::random(&mut rng);
 
         let xx = x * x;
@@ -462,18 +466,18 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         // group the T_scalars and T_points together
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
 
-        let mut scalars = vec![x, xx, xxx, u*x, u * xx,  u * xxx];
-        for wVi in wV.iter() {
-            scalars.push(wVi * rxx);
-        }
-        scalars.extend_from_slice(&T_scalars);
+        let mut scalars: Vec<Scalar> = vec![];
         scalars.push(w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x));
         scalars.push(-proof.e_blinding - r * proof.t_x_blinding);
         scalars.extend_from_slice(&g_scalars);
         scalars.extend_from_slice(&h_scalars);
+        scalars.extend_from_slice(&[x, xx, xxx, u * x, u * xx, u * xxx]);
+        for wVi in wV.iter() {
+            scalars.push(wVi * rxx);
+        }
+        scalars.extend_from_slice(&T_scalars);
         scalars.extend_from_slice(&u_sq);
         scalars.extend_from_slice(&u_inv_sq);
-
         Ok((self, scalars))
     }
 
@@ -511,7 +515,11 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         use std::iter;
         let mega_check = RistrettoPoint::optional_multiscalar_mul(
             scalars,
-            iter::once(proof.A_I1.decompress())
+            iter::once(Some(pc_gens.B))
+                .chain(iter::once(Some(pc_gens.B_blinding)))
+                .chain(gens.G(padded_n).map(|&G_i| Some(G_i)))
+                .chain(gens.H(padded_n).map(|&H_i| Some(H_i)))
+                .chain(iter::once(proof.A_I1.decompress()))
                 .chain(iter::once(proof.A_O1.decompress()))
                 .chain(iter::once(proof.S1.decompress()))
                 .chain(iter::once(proof.A_I2.decompress()))
@@ -519,10 +527,6 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
                 .chain(iter::once(proof.S2.decompress()))
                 .chain(self.V.iter().map(|V_i| V_i.decompress()))
                 .chain(T_points.iter().map(|T_i| T_i.decompress()))
-                .chain(iter::once(Some(pc_gens.B)))
-                .chain(iter::once(Some(pc_gens.B_blinding)))
-                .chain(gens.G(padded_n).map(|&G_i| Some(G_i)))
-                .chain(gens.H(padded_n).map(|&H_i| Some(H_i)))
                 .chain(proof.ipp_proof.L_vec.iter().map(|L_i| L_i.decompress()))
                 .chain(proof.ipp_proof.R_vec.iter().map(|R_i| R_i.decompress())),
         )
@@ -539,13 +543,113 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 }
 
 /// Batch verification of R1CS proofs
-pub fn batch_verify<'a, I>(instances: I, pc_gens: &PedersenGens, bp_gens: &BulletproofGens)
-    -> Result<(), R1CSError>
-where I: IntoIterator<Item = (Verifier<&'a mut Transcript>, &'a R1CSProof)>
+pub fn batch_verify<'a, I, R: CryptoRng + RngCore>(
+    prng: &mut R,
+    instances: I,
+    pc_gens: &PedersenGens,
+    bp_gens: &BulletproofGens,
+) -> Result<(), R1CSError>
+where
+    I: IntoIterator<Item = (Verifier<&'a mut Transcript>, &'a R1CSProof)>,
 {
+    let mut max_n_padded = 0;
+    let mut verifiers: Vec<Verifier<_>> = vec![];
+    let mut proofs: Vec<&R1CSProof> = vec![];
     for (verifier, proof) in instances.into_iter() {
-        println!("HELLO");
-        verifier.verify(proof, pc_gens, bp_gens)?;
+        let n = verifier.num_vars;
+        println!("num_vars {}", n);
+        if n > max_n_padded {
+            max_n_padded = n;
+        }
+        verifiers.push(verifier);
+        proofs.push(proof);
     }
-    Ok(())
+    max_n_padded = max_n_padded.next_power_of_two();
+    println!("MAX {}", max_n_padded);
+    let mut all_scalars = vec![];
+    let mut all_elems = vec![];
+
+    for _ in 0..(2 * max_n_padded + 2) {
+        all_scalars.push(Scalar::zero());
+    }
+    all_elems.push(pc_gens.B);
+    all_elems.push(pc_gens.B_blinding);
+    let gens = bp_gens.share(0);
+    for G in gens.G(max_n_padded) {
+        all_elems.push(*G);
+    }
+    for H in gens.H(max_n_padded) {
+        all_elems.push(*H);
+    }
+
+    println!("all_elems len {}", all_elems.len());
+    println!("all_scalars len {}", all_scalars.len());
+    for (verifier, proof) in verifiers.into_iter().zip(proofs.iter()) {
+        let alpha = Scalar::random(prng);
+        let (verifier, scalars) = verifier.verification_scalars(proof, bp_gens)?;
+        let scaled_scalars: Vec<Scalar> = scalars.into_iter().map(|s| alpha * s).collect();
+        let padded_n = verifier.num_vars.next_power_of_two();
+        all_scalars[0] += scaled_scalars[0]; // B
+        all_scalars[1] += scaled_scalars[1]; // B_blinding
+                                             // g values
+        for (i, s) in (&scaled_scalars[2..2 + padded_n]).iter().enumerate() {
+            all_scalars[i + 2] += *s;
+        }
+        // h values
+        for (i, s) in (&scaled_scalars[2 + padded_n..2 + 2 * padded_n])
+            .iter()
+            .enumerate()
+        {
+            all_scalars[2 + max_n_padded + i] += *s;
+        }
+        println!("2 + 2*padded_n: {}", 2 + 2 * padded_n);
+
+        for s in (&scaled_scalars[2 + 2 * padded_n..]).iter() {
+            all_scalars.push(*s);
+        }
+        all_elems.push(proof.A_I1.decompress().unwrap());
+        all_elems.push(proof.A_O1.decompress().unwrap());
+        all_elems.push(proof.S1.decompress().unwrap());
+        all_elems.push(proof.A_I2.decompress().unwrap());
+        all_elems.push(proof.A_O2.decompress().unwrap());
+        all_elems.push(proof.S2.decompress().unwrap());
+        let V: Vec<_> = verifier
+            .V
+            .iter()
+            .map(|Vi| Vi.decompress().unwrap())
+            .collect();
+        println!("V_len:{}", V.len());
+        all_elems.extend_from_slice(V.as_slice());
+        all_elems.push(proof.T_1.decompress().unwrap());
+        all_elems.push(proof.T_3.decompress().unwrap());
+        all_elems.push(proof.T_4.decompress().unwrap());
+        all_elems.push(proof.T_5.decompress().unwrap());
+        all_elems.push(proof.T_6.decompress().unwrap());
+        let L_vec: Vec<_> = proof
+            .ipp_proof
+            .L_vec
+            .iter()
+            .map(|L| L.decompress().unwrap())
+            .collect();
+        let R_vec: Vec<_> = proof
+            .ipp_proof
+            .R_vec
+            .iter()
+            .map(|R| R.decompress().unwrap())
+            .collect();
+
+        println!("L_vec.len:{}", L_vec.len());
+        all_elems.extend_from_slice(&L_vec);
+        all_elems.extend_from_slice(&R_vec);
+        //verifier.verify(proof, pc_gens, bp_gens)?;
+    }
+
+    println!("elems.len :{}", all_elems.len());
+    println!("scalars.len :{}", all_scalars.len());
+    let multi_exp = RistrettoPoint::multiscalar_mul(all_scalars, all_elems);
+    if multi_exp != RistrettoPoint::identity() {
+        Err(R1CSError::VerificationError)
+    } else {
+        Ok(())
+    }
 }
