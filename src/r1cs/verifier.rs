@@ -557,7 +557,6 @@ where
     let mut proofs: Vec<&R1CSProof> = vec![];
     for (verifier, proof) in instances.into_iter() {
         let n = verifier.num_vars;
-        println!("num_vars {}", n);
         if n > max_n_padded {
             max_n_padded = n;
         }
@@ -565,7 +564,6 @@ where
         proofs.push(proof);
     }
     max_n_padded = max_n_padded.next_power_of_two();
-    println!("MAX {}", max_n_padded);
     let mut all_scalars = vec![];
     let mut all_elems = vec![];
 
@@ -582,8 +580,6 @@ where
         all_elems.push(*H);
     }
 
-    println!("all_elems len {}", all_elems.len());
-    println!("all_scalars len {}", all_scalars.len());
     for (verifier, proof) in verifiers.into_iter().zip(proofs.iter()) {
         let alpha = Scalar::random(prng);
         let (verifier, scalars) = verifier.verification_scalars(proof, bp_gens)?;
@@ -602,7 +598,6 @@ where
         {
             all_scalars[2 + max_n_padded + i] += *s;
         }
-        println!("2 + 2*padded_n: {}", 2 + 2 * padded_n);
 
         for s in (&scaled_scalars[2 + 2 * padded_n..]).iter() {
             all_scalars.push(*s);
@@ -618,7 +613,6 @@ where
             .iter()
             .map(|Vi| Vi.decompress().unwrap())
             .collect();
-        println!("V_len:{}", V.len());
         all_elems.extend_from_slice(V.as_slice());
         all_elems.push(proof.T_1.decompress().unwrap());
         all_elems.push(proof.T_3.decompress().unwrap());
@@ -637,15 +631,10 @@ where
             .iter()
             .map(|R| R.decompress().unwrap())
             .collect();
-
-        println!("L_vec.len:{}", L_vec.len());
         all_elems.extend_from_slice(&L_vec);
         all_elems.extend_from_slice(&R_vec);
-        //verifier.verify(proof, pc_gens, bp_gens)?;
     }
 
-    println!("elems.len :{}", all_elems.len());
-    println!("scalars.len :{}", all_scalars.len());
     let multi_exp = RistrettoPoint::multiscalar_mul(all_scalars, all_elems);
     if multi_exp != RistrettoPoint::identity() {
         Err(R1CSError::VerificationError)
