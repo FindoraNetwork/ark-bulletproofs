@@ -555,15 +555,18 @@ where
     let mut max_n_padded = 0;
     let mut verifiers: Vec<Verifier<_>> = vec![];
     let mut proofs: Vec<&R1CSProof> = vec![];
+    let mut verification_scalars = vec![];
     for (verifier, proof) in instances.into_iter() {
-        let n = verifier.num_vars;
+        // verification_scalars method is mutable, need to run before obtaining verifier.num_vars
+        let (verifier, scalars) = verifier.verification_scalars(proof, bp_gens)?;
+        let n = verifier.num_vars.next_power_of_two();
         if n > max_n_padded {
             max_n_padded = n;
         }
+        verification_scalars.push(scalars);
         verifiers.push(verifier);
         proofs.push(proof);
     }
-    max_n_padded = max_n_padded.next_power_of_two();
     let mut all_scalars = vec![];
     let mut all_elems = vec![];
 
@@ -580,9 +583,8 @@ where
         all_elems.push(*H);
     }
 
-    for (verifier, proof) in verifiers.into_iter().zip(proofs.iter()) {
+    for ((verifier, proof), scalars) in verifiers.into_iter().zip(proofs.iter()).zip(verification_scalars.iter()) {
         let alpha = Scalar::random(prng);
-        let (verifier, scalars) = verifier.verification_scalars(proof, bp_gens)?;
         let scaled_scalars: Vec<Scalar> = scalars.into_iter().map(|s| alpha * s).collect();
         let padded_n = verifier.num_vars.next_power_of_two();
         all_scalars[0] += scaled_scalars[0]; // B
