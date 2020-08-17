@@ -9,6 +9,7 @@ COPY ./docs /app/docs
 COPY ./src /app/src
 COPY ./tests /app/tests
 RUN cargo audit
+RUN cargo check
 RUN cargo test
 RUN rm -rf /app/target
 FROM debian:buster
