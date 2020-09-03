@@ -1,8 +1,8 @@
 pipeline {
 
   environment {
-    dockerRepo = 'https://nexus.findora.org'
-    dockerCreds = 'nexus'
+    dockerRepo = 'https://563536162678.dkr.ecr.us-west-2.amazonaws.com'
+    dockerCreds = 'ecr:us-west-2:aws-jenkins'
     dockerName = 'bulletproofs'
   }
 
@@ -21,7 +21,9 @@ pipeline {
 
     stage('Push') {
       when {
-        branch 'master'
+        not {
+          changeRequest()
+        }
       }
       steps {
         script {
