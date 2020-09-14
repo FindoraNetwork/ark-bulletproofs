@@ -159,3 +159,7 @@ impl From<ProofError> for R1CSError {
         }
     }
 }
+
+pub enum BPGensError {
+    IncorrectDeserializationError,
+}
