@@ -583,7 +583,11 @@ where
         all_elems.push(*H);
     }
 
-    for ((verifier, proof), scalars) in verifiers.into_iter().zip(proofs.iter()).zip(verification_scalars.iter()) {
+    for ((verifier, proof), scalars) in verifiers
+        .into_iter()
+        .zip(proofs.iter())
+        .zip(verification_scalars.iter())
+    {
         let alpha = Scalar::random(prng);
         let scaled_scalars: Vec<Scalar> = scalars.into_iter().map(|s| alpha * s).collect();
         let padded_n = verifier.num_vars.next_power_of_two();
