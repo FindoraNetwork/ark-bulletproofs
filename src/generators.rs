@@ -14,7 +14,6 @@ use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::MultiscalarMul;
 use digest::{ExtendableOutput, Input, XofReader};
 use sha3::{Sha3XofReader, Sha3_512, Shake256};
-use std::fs;
 
 /// Represents a pair of base points for Pedersen commitments.
 ///
