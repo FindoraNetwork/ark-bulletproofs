@@ -170,11 +170,11 @@ impl BulletproofGens {
     /// Get the public parameters from a file
     /// * `filename` - absolute path of the file containing the data of the public parameters
     pub fn from_file(filename: &str) -> Result<Self, BPGensError> {
-        let contents = fs::read_to_string(&filename);
+        let contents = fs::read(filename);
         if contents.is_err() {
             return Err(BPGensError::IncorrectDeserializationError);
         }
-        let bp_gens = serde_json::from_str(&contents.unwrap());
+        let bp_gens = bincode::deserialize(&contents.unwrap()); // safe unwrap
         match bp_gens {
             Ok(gens) => Ok(gens),
             _ => Err(BPGensError::IncorrectDeserializationError),
