@@ -6,7 +6,6 @@
 
 extern crate alloc;
 
-use crate::errors::BPGensError;
 use alloc::vec::Vec;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
@@ -165,20 +164,6 @@ impl BulletproofGens {
         };
         gens.increase_capacity(gens_capacity);
         gens
-    }
-
-    /// Get the public parameters from a file
-    /// * `filename` - absolute path of the file containing the data of the public parameters
-    pub fn from_file(filename: &str) -> Result<Self, BPGensError> {
-        let contents = fs::read(filename);
-        if contents.is_err() {
-            return Err(BPGensError::IncorrectDeserializationError);
-        }
-        let bp_gens = bincode::deserialize(&contents.unwrap()); // safe unwrap
-        match bp_gens {
-            Ok(gens) => Ok(gens),
-            _ => Err(BPGensError::IncorrectDeserializationError),
-        }
     }
 
     /// Returns j-th share of generators, with an appropriate
