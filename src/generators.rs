@@ -129,7 +129,7 @@ impl Iterator for GeneratorsChain {
 /// chain, and even forward-compatible to multiparty aggregation of
 /// constraint system proofs, since the generators are namespaced by
 /// their party index.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BulletproofGens {
     /// The maximum number of usable generators for each party.
     pub gens_capacity: usize,
