@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly-buster AS builder
+FROM 563536162678.dkr.ecr.us-west-2.amazonaws.com/rust:2020-09-15 AS builder
 RUN cargo install cargo-audit
 RUN mkdir /app
 WORKDIR /app/
