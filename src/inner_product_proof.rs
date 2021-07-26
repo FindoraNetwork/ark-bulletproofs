@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![doc = include_str!("../docs/inner-product-protocol.md")]
 
 extern crate alloc;
 

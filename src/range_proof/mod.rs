@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![doc = include_str!("../../docs/range-proof-protocol.md")]
 
 extern crate alloc;
 #[cfg(feature = "std")]
