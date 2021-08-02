@@ -629,6 +629,7 @@ impl RangeProof {
     /// Deserializes the proof from a byte slice.
     ///
     /// Returns an error if the byte slice cannot be parsed into a `RangeProof`.
+    #[allow(clippy::erasing_op)]
     pub fn from_bytes(slice: &[u8]) -> Result<RangeProof, ProofError> {
         if slice.len() % 32 != 0 {
             return Err(ProofError::FormatError);

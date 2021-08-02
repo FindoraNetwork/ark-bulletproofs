@@ -333,20 +333,21 @@ impl InnerProductProof {
         (self.L_vec.len() * 2 + 2) * 32
     }
 
-    // /// Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
-    // /// The layout of the inner product proof is:
-    // /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
-    // /// * two scalars \\(a, b\\).
-    // pub fn to_bytes(&self) -> Vec<u8> {
-    //     let mut buf = Vec::with_capacity(self.serialized_size());
-    //     for (l, r) in self.L_vec.iter().zip(self.R_vec.iter()) {
-    //         buf.extend_from_slice(l.as_bytes());
-    //         buf.extend_from_slice(r.as_bytes());
-    //     }
-    //     buf.extend_from_slice(self.a.as_bytes());
-    //     buf.extend_from_slice(self.b.as_bytes());
-    //     buf
-    // }
+    /// Serializes the proof into a byte array of \\(2n+2\\) 32-byte elements.
+    /// The layout of the inner product proof is:
+    /// * \\(n\\) pairs of compressed Ristretto points \\(L_0, R_0 \dots, L_{n-1}, R_{n-1}\\),
+    /// * two scalars \\(a, b\\).
+    #[cfg(test)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.serialized_size());
+        for (l, r) in self.L_vec.iter().zip(self.R_vec.iter()) {
+            buf.extend_from_slice(l.as_bytes());
+            buf.extend_from_slice(r.as_bytes());
+        }
+        buf.extend_from_slice(self.a.as_bytes());
+        buf.extend_from_slice(self.b.as_bytes());
+        buf
+    }
 
     /// Converts the proof into a byte iterator over serialized view of the proof.
     /// The layout of the inner product proof is:
