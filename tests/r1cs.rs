@@ -154,9 +154,9 @@ fn kshuffle_helper(k: usize) {
     let (proof, input_commitments, output_commitments) = {
         // Randomly generate inputs and outputs to kshuffle
         let mut rng = rand::thread_rng();
-        let (min, max) = (0u64, std::u64::MAX);
+        let (min, max) = (0u64, u64::MAX);
         let input: Vec<Scalar> = (0..k)
-            .map(|_| Scalar::from(rng.gen_range(min, max)))
+            .map(|_| Scalar::from(rng.gen_range(min..max)))
             .collect();
         let mut output = input.clone();
         output.shuffle(&mut rand::thread_rng());
@@ -256,7 +256,7 @@ fn example_gadget_proof(
 
     // 2. Commit high-level variables
     let (commitments, vars): (Vec<_>, Vec<_>) = [a1, a2, b1, b2, c1]
-        .into_iter()
+        .iter()
         .map(|x| prover.commit(Scalar::from(*x), Scalar::random(&mut thread_rng())))
         .unzip();
 
@@ -411,7 +411,7 @@ fn range_proof_gadget() {
 
     for n in [2, 10, 32, 63].iter() {
         let (min, max) = (0u64, ((1u128 << n) - 1) as u64);
-        let values: Vec<u64> = (0..m).map(|_| rng.gen_range(min, max)).collect();
+        let values: Vec<u64> = (0..m).map(|_| rng.gen_range(min..max)).collect();
         for v in values {
             assert!(range_proof_helper(v.into(), *n).is_ok());
         }

@@ -173,7 +173,7 @@ fn bench_kshuffle_prove(c: &mut Criterion) {
         move |b, k| {
             // Generate inputs and outputs to kshuffle
             let mut rng = rand::thread_rng();
-            let (min, max) = (0u64, std::u64::MAX);
+            let (min, max) = (0u64, u64::MAX);
             let input: Vec<Scalar> = (0..*k)
                 .map(|_| Scalar::from(rng.gen_range(min, max)))
                 .collect();
@@ -215,7 +215,7 @@ fn bench_kshuffle_verify(c: &mut Criterion) {
             let (proof, input_commitments, output_commitments) = {
                 // Generate inputs and outputs to kshuffle
                 let mut rng = rand::thread_rng();
-                let (min, max) = (0u64, std::u64::MAX);
+                let (min, max) = (0u64, u64::MAX);
                 let input: Vec<Scalar> = (0..*k)
                     .map(|_| Scalar::from(rng.gen_range(min, max)))
                     .collect();
