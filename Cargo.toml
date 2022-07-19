@@ -60,7 +60,7 @@ criterion = "0.3"
 rand_chacha = "0.3"
 
 [features]
-default = ["std", "yoloproofs", "parallel"]
+default = ["std", "yoloproofs"]
 yoloproofs = []
 std = ["rand", "rand/std", "thiserror"]
 parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
