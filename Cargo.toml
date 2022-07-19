@@ -18,7 +18,6 @@ description = "A pure-Rust implementation of Bulletproofs using Ristretto"
 edition = "2018"
 
 [dependencies]
-curve25519-dalek = { version = "3", default-features = false, features = ["serde", "alloc", "u64_backend"] }
 subtle = { version = "2", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 digest = { version = "0.10", default-features = false }
@@ -30,24 +29,48 @@ serde_derive = { version = "1", default-features = false }
 thiserror = { version = "1", optional = true }
 merlin = { version = "3", default-features = false }
 clear_on_drop = { version = "0.2", features = ["no_cc"] }
+rand_chacha = "0.3"
+
+[dependencies.ark-ec]
+version = '^0.3.0'
+default-features = false
+
+[dependencies.ark-ff]
+version = '^0.3.0'
+default-features = false
+features = ['asm']
+
+[dependencies.ark-std]
+version = '^0.3.0'
+default-features = false
+
+[dependencies.ark-serialize]
+version = '^0.3.0'
+default-features = false
+features = ["derive"]
+
+[dependencies.ark-algebra-test-templates]
+version = '^0.3.0'
+default-features = false
+features = ["std"]
 
 [dev-dependencies]
 hex = "0.3"
 criterion = "0.3"
-bincode = "1"
 rand_chacha = "0.3"
 
 [features]
-default = ["std", "yoloproofs"]
-avx2_backend = ["curve25519-dalek/avx2_backend"]
+default = ["std", "yoloproofs", "parallel"]
 yoloproofs = []
 std = ["rand", "rand/std", "thiserror"]
-
-[[test]]
-name = "range_proof"
+parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
 
 [[test]]
 name = "r1cs"
+required-features = ["yoloproofs"]
+
+[[test]]
+name = "scalar_mul"
 required-features = ["yoloproofs"]
 
 [[bench]]
@@ -59,9 +82,46 @@ name = "generators"
 harness = false
 
 [[bench]]
+name = "scalar_mul"
+harness = false
+
+[[bench]]
 name = "r1cs"
 harness = false
 required-features = ["yoloproofs"]
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+incremental = true
+panic = 'abort'
+
+[profile.bench]
+opt-level = 3
+debug = false
+rpath = false
+lto = "thin"
+incremental = true
+debug-assertions = false
+
+[profile.dev]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug-assertions = true
+debug = true
+panic = 'abort'
+
+[profile.test]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug-assertions = true
+debug = true
+
 [patch.crates-io]
-curve25519-dalek = { git = "https://github.com/FindoraNetwork/curve25519-dalek" }
+ark-ec = { git = "https://github.com/FindoraNetwork/ark-algebra" }
+ark-ff = { git = "https://github.com/FindoraNetwork/ark-algebra" }
+ark-serialize = { git = "https://github.com/FindoraNetwork/ark-algebra" }
+ark-algebra-test-templates = { git = "https://github.com/FindoraNetwork/ark-algebra" }
+ark-std = { git = "https://github.com/FindoraNetwork/ark-std" }

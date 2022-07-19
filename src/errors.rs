@@ -1,7 +1,7 @@
 //! Errors related to proving and verifying proofs.
 
-extern crate alloc;
-use alloc::vec::Vec;
+use ark_serialize::SerializationError;
+use ark_std::vec::Vec;
 
 #[cfg(feature = "std")]
 use thiserror::Error;
@@ -45,6 +45,9 @@ pub enum ProofError {
     /// consider its errors to be internal errors.
     #[cfg_attr(feature = "std", error("Internal error during proof creation: {0}"))]
     ProvingError(MPCError),
+    /// This error occurs if serialization fails
+    #[cfg_attr(feature = "std", error("Serialization error"))]
+    SerializationError(String),
 }
 
 impl From<MPCError> for ProofError {
@@ -157,5 +160,17 @@ impl From<ProofError> for R1CSError {
             ProofError::VerificationError => R1CSError::VerificationError,
             _ => panic!("unexpected error type in conversion"),
         }
+    }
+}
+
+impl From<ark_std::io::Error> for ProofError {
+    fn from(e: ark_std::io::Error) -> ProofError {
+        ProofError::SerializationError(e.to_string())
+    }
+}
+
+impl From<SerializationError> for ProofError {
+    fn from(_: ark_serialize::SerializationError) -> ProofError {
+        ProofError::FormatError
     }
 }

@@ -10,20 +10,22 @@
 //! modules orchestrate the protocol execution, see the documentation
 //! in the [`aggregation`](::range_proof_mpc) module.
 
-extern crate alloc;
-
-use alloc::vec::Vec;
+use ark_ec::{msm, AffineCurve, ProjectiveCurve};
+use ark_ff::PrimeField;
+use ark_std::{
+    iter,
+    ops::Neg,
+    rand::{CryptoRng, RngCore},
+    vec::Vec,
+    One, UniformRand, Zero,
+};
 use clear_on_drop::clear::Clear;
-use core::iter;
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::MultiscalarMul;
-use rand_core::{CryptoRng, RngCore};
 
 use crate::errors::MPCError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::util;
 
+use crate::curve::bs257::{BigIntType, Fr, G1Affine};
 #[cfg(feature = "std")]
 use rand::thread_rng;
 
@@ -38,7 +40,7 @@ impl Party {
         bp_gens: &'a BulletproofGens,
         pc_gens: &'a PedersenGens,
         v: u64,
-        v_blinding: Scalar,
+        v_blinding: Fr,
         n: usize,
     ) -> Result<PartyAwaitingPosition<'a>, MPCError> {
         if !(n == 8 || n == 16 || n == 32 || n == 64) {
@@ -48,7 +50,7 @@ impl Party {
             return Err(MPCError::InvalidGeneratorsLength);
         }
 
-        let V = pc_gens.commit(v.into(), v_blinding).compress();
+        let V = pc_gens.commit(v.into(), v_blinding);
 
         Ok(PartyAwaitingPosition {
             bp_gens,
@@ -67,8 +69,8 @@ pub struct PartyAwaitingPosition<'a> {
     pc_gens: &'a PedersenGens,
     n: usize,
     v: u64,
-    v_blinding: Scalar,
-    V: CompressedRistretto,
+    v_blinding: Fr,
+    V: G1Affine,
 }
 
 impl<'a> PartyAwaitingPosition<'a> {
@@ -95,39 +97,43 @@ impl<'a> PartyAwaitingPosition<'a> {
 
         let bp_share = self.bp_gens.share(j);
 
-        let a_blinding = Scalar::random(rng);
+        let a_blinding = Fr::rand(rng);
         // Compute A = <a_L, G> + <a_R, H> + a_blinding * B_blinding
-        let mut A = self.pc_gens.B_blinding * a_blinding;
+        let mut A = self.pc_gens.B_blinding.mul(a_blinding.into_repr());
 
-        use subtle::{Choice, ConditionallySelectable};
         let mut i = 0;
         for (G_i, H_i) in bp_share.G(self.n).zip(bp_share.H(self.n)) {
             // If v_i = 0, we add a_L[i] * G[i] + a_R[i] * H[i] = - H[i]
             // If v_i = 1, we add a_L[i] * G[i] + a_R[i] * H[i] =   G[i]
-            let v_i = Choice::from(((self.v >> i) & 1) as u8);
-            let mut point = -H_i;
-            point.conditional_assign(G_i, v_i);
-            A += point;
+            let v_i = (self.v >> i) & 1;
+            let point = if v_i == 1 { G_i.clone() } else { H_i.neg() };
+            A.add_assign_mixed(&point);
             i += 1;
         }
 
-        let s_blinding = Scalar::random(rng);
-        let s_L: Vec<Scalar> = (0..self.n).map(|_| Scalar::random(rng)).collect();
-        let s_R: Vec<Scalar> = (0..self.n).map(|_| Scalar::random(rng)).collect();
+        let s_blinding = Fr::rand(rng);
+        let s_L: Vec<Fr> = (0..self.n).map(|_| Fr::rand(rng)).collect();
+        let s_R: Vec<Fr> = (0..self.n).map(|_| Fr::rand(rng)).collect();
 
         // Compute S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-        let S = RistrettoPoint::multiscalar_mul(
-            iter::once(&s_blinding).chain(s_L.iter()).chain(s_R.iter()),
-            iter::once(&self.pc_gens.B_blinding)
+        let S = msm::VariableBase::msm(
+            &iter::once(&self.pc_gens.B_blinding)
                 .chain(bp_share.G(self.n))
-                .chain(bp_share.H(self.n)),
+                .chain(bp_share.H(self.n))
+                .map(|f| f.clone())
+                .collect::<Vec<G1Affine>>(),
+            &iter::once(&s_blinding)
+                .chain(s_L.iter())
+                .chain(s_R.iter())
+                .map(|f| f.into_repr())
+                .collect::<Vec<BigIntType>>(),
         );
 
         // Return next state and all commitments
         let bit_commitment = BitCommitment {
             V_j: self.V,
-            A_j: A,
-            S_j: S,
+            A_j: A.into_affine(),
+            S_j: S.into_affine(),
         };
         let next_state = PartyAwaitingBitChallenge {
             n: self.n,
@@ -157,13 +163,13 @@ impl<'a> Drop for PartyAwaitingPosition<'a> {
 pub struct PartyAwaitingBitChallenge<'a> {
     n: usize, // bitsize of the range
     v: u64,
-    v_blinding: Scalar,
+    v_blinding: Fr,
     j: usize,
     pc_gens: &'a PedersenGens,
-    a_blinding: Scalar,
-    s_blinding: Scalar,
-    s_L: Vec<Scalar>,
-    s_R: Vec<Scalar>,
+    a_blinding: Fr,
+    s_blinding: Fr,
+    s_L: Vec<Fr>,
+    s_R: Vec<Fr>,
 }
 
 impl<'a> PartyAwaitingBitChallenge<'a> {
@@ -194,10 +200,10 @@ impl<'a> PartyAwaitingBitChallenge<'a> {
 
         let offset_zz = vc.z * vc.z * offset_z;
         let mut exp_y = offset_y; // start at y^j
-        let mut exp_2 = Scalar::one(); // start at 2^0 = 1
+        let mut exp_2 = Fr::one(); // start at 2^0 = 1
         for i in 0..n {
-            let a_L_i = Scalar::from((self.v >> i) & 1);
-            let a_R_i = a_L_i - Scalar::one();
+            let a_L_i = Fr::from((self.v >> i) & 1);
+            let a_R_i = a_L_i - Fr::one();
 
             l_poly.0[i] = a_L_i - vc.z;
             l_poly.1[i] = self.s_L[i];
@@ -211,8 +217,8 @@ impl<'a> PartyAwaitingBitChallenge<'a> {
         let t_poly = l_poly.inner_product(&r_poly);
 
         // Generate x by committing to T_1, T_2 (line 49-54)
-        let t_1_blinding = Scalar::random(rng);
-        let t_2_blinding = Scalar::random(rng);
+        let t_1_blinding = Fr::rand(rng);
+        let t_2_blinding = Fr::rand(rng);
         let T_1 = self.pc_gens.commit(t_poly.1, t_1_blinding);
         let T_2 = self.pc_gens.commit(t_poly.2, t_2_blinding);
 
@@ -262,15 +268,15 @@ impl<'a> Drop for PartyAwaitingBitChallenge<'a> {
 /// A party which has committed to their polynomial coefficents
 /// and is waiting for the polynomial challenge from the dealer.
 pub struct PartyAwaitingPolyChallenge {
-    offset_zz: Scalar,
+    offset_zz: Fr,
     l_poly: util::VecPoly1,
     r_poly: util::VecPoly1,
     t_poly: util::Poly2,
-    v_blinding: Scalar,
-    a_blinding: Scalar,
-    s_blinding: Scalar,
-    t_1_blinding: Scalar,
-    t_2_blinding: Scalar,
+    v_blinding: Fr,
+    a_blinding: Fr,
+    s_blinding: Fr,
+    t_1_blinding: Fr,
+    t_2_blinding: Fr,
 }
 
 impl PartyAwaitingPolyChallenge {
@@ -279,7 +285,7 @@ impl PartyAwaitingPolyChallenge {
     pub fn apply_challenge(self, pc: &PolyChallenge) -> Result<ProofShare, MPCError> {
         // Prevent a malicious dealer from annihilating the blinding
         // factors by supplying a zero challenge.
-        if pc.x == Scalar::zero() {
+        if pc.x == Fr::zero() {
             return Err(MPCError::MaliciousDealer);
         }
 

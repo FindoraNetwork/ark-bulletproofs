@@ -6,17 +6,20 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_COMPRESSED;
-use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::MultiscalarMul;
-use digest::core_api::XofReaderCoreWrapper;
-use digest::{ExtendableOutput, Update, XofReader};
-use sha3::{Sha3_512, Shake256, Shake256ReaderCore};
-
-type Shake256XofReader = XofReaderCoreWrapper<Shake256ReaderCore>;
+use crate::curve::bs257::{Fr, G1Affine};
+use ark_ec::{AffineCurve, ProjectiveCurve};
+use ark_ff::{to_bytes, PrimeField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_std::{
+    io::{Read, Write},
+    ops::Add,
+    rand::SeedableRng,
+    vec::Vec,
+    UniformRand,
+};
+use digest::Digest;
+use rand_chacha::ChaChaRng;
+use sha3::Sha3_512;
 
 /// Represents a pair of base points for Pedersen commitments.
 ///
@@ -32,25 +35,37 @@ type Shake256XofReader = XofReaderCoreWrapper<Shake256ReaderCore>;
 #[derive(Copy, Clone)]
 pub struct PedersenGens {
     /// Base for the committed value
-    pub B: RistrettoPoint,
+    pub B: G1Affine,
     /// Base for the blinding factor
-    pub B_blinding: RistrettoPoint,
+    pub B_blinding: G1Affine,
 }
 
 impl PedersenGens {
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
-    pub fn commit(&self, value: Scalar, blinding: Scalar) -> RistrettoPoint {
-        RistrettoPoint::multiscalar_mul(&[value, blinding], &[self.B, self.B_blinding])
+    pub fn commit(&self, value: Fr, blinding: Fr) -> G1Affine {
+        self.B
+            .mul(value.into_repr())
+            .add(self.B_blinding.mul(blinding.into_repr()))
+            .into_affine()
     }
 }
 
 impl Default for PedersenGens {
     fn default() -> Self {
+        let bytes = to_bytes!(G1Affine::prime_subgroup_generator()).unwrap();
+
+        let mut hash = Sha3_512::new();
+        Digest::update(&mut hash, &bytes);
+        let h = hash.finalize();
+
+        let mut res = [0u8; 32];
+        res.copy_from_slice(&h[..32]);
+
+        let mut prng = ChaChaRng::from_seed(res);
+
         PedersenGens {
-            B: RISTRETTO_BASEPOINT_POINT,
-            B_blinding: RistrettoPoint::hash_from_bytes::<Sha3_512>(
-                RISTRETTO_BASEPOINT_COMPRESSED.as_bytes(),
-            ),
+            B: G1Affine::prime_subgroup_generator(),
+            B_blinding: G1Affine::rand(&mut prng),
         }
     }
 }
@@ -59,27 +74,30 @@ impl Default for PedersenGens {
 /// orthogonal generators.  The sequence can be deterministically
 /// produced starting with an arbitrary point.
 struct GeneratorsChain {
-    reader: Shake256XofReader,
+    prng: ChaChaRng,
 }
 
 impl GeneratorsChain {
     /// Creates a chain of generators, determined by the hash of `label`.
     fn new(label: &[u8]) -> Self {
-        let mut shake = Shake256::default();
-        shake.update(b"GeneratorsChain");
-        shake.update(label);
+        let mut hash = Sha3_512::new();
+        Digest::update(&mut hash, b"GeneratorsChain");
+        Digest::update(&mut hash, label);
+        let h = hash.finalize();
 
-        GeneratorsChain {
-            reader: shake.finalize_xof(),
-        }
+        let mut res = [0u8; 32];
+        res.copy_from_slice(&h[..32]);
+
+        let prng = ChaChaRng::from_seed(res);
+
+        GeneratorsChain { prng }
     }
 
     /// Advances the reader n times, squeezing and discarding
     /// the result.
     fn fast_forward(mut self, n: usize) -> Self {
         for _ in 0..n {
-            let mut buf = [0u8; 64];
-            self.reader.read(&mut buf);
+            let _ = G1Affine::rand(&mut self.prng);
         }
         self
     }
@@ -92,13 +110,10 @@ impl Default for GeneratorsChain {
 }
 
 impl Iterator for GeneratorsChain {
-    type Item = RistrettoPoint;
+    type Item = G1Affine;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut uniform_bytes = [0u8; 64];
-        self.reader.read(&mut uniform_bytes);
-
-        Some(RistrettoPoint::from_uniform_bytes(&uniform_bytes))
+        Some(G1Affine::rand(&mut self.prng))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -132,16 +147,16 @@ impl Iterator for GeneratorsChain {
 /// chain, and even forward-compatible to multiparty aggregation of
 /// constraint system proofs, since the generators are namespaced by
 /// their party index.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
 pub struct BulletproofGens {
     /// The maximum number of usable generators for each party.
     pub gens_capacity: usize,
     /// Number of values or parties
     pub party_capacity: usize,
     /// Precomputed \\(\mathbf G\\) generators for each party.
-    G_vec: Vec<Vec<RistrettoPoint>>,
+    G_vec: Vec<Vec<G1Affine>>,
     /// Precomputed \\(\mathbf H\\) generators for each party.
-    H_vec: Vec<Vec<RistrettoPoint>>,
+    H_vec: Vec<Vec<G1Affine>>,
 }
 
 impl BulletproofGens {
@@ -207,7 +222,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' G generators with given size `n`.
-    pub(crate) fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &RistrettoPoint> {
+    pub(crate) fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
         AggregatedGensIter {
             n,
             m,
@@ -218,7 +233,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' H generators with given size `n`.
-    pub(crate) fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &RistrettoPoint> {
+    pub(crate) fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
         AggregatedGensIter {
             n,
             m,
@@ -230,7 +245,7 @@ impl BulletproofGens {
 }
 
 struct AggregatedGensIter<'a> {
-    array: &'a Vec<Vec<RistrettoPoint>>,
+    array: &'a Vec<Vec<G1Affine>>,
     n: usize,
     m: usize,
     party_idx: usize,
@@ -238,7 +253,7 @@ struct AggregatedGensIter<'a> {
 }
 
 impl<'a> Iterator for AggregatedGensIter<'a> {
-    type Item = &'a RistrettoPoint;
+    type Item = &'a G1Affine;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.gen_idx >= self.n {
@@ -279,12 +294,12 @@ pub struct BulletproofGensShare<'a> {
 
 impl<'a> BulletproofGensShare<'a> {
     /// Return an iterator over this party's G generators with given size `n`.
-    pub(crate) fn G(&self, n: usize) -> impl Iterator<Item = &'a RistrettoPoint> {
+    pub(crate) fn G(&self, n: usize) -> impl Iterator<Item = &'a G1Affine> {
         self.gens.G_vec[self.share].iter().take(n)
     }
 
     /// Return an iterator over this party's H generators with given size `n`.
-    pub(crate) fn H(&self, n: usize) -> impl Iterator<Item = &'a RistrettoPoint> {
+    pub(crate) fn H(&self, n: usize) -> impl Iterator<Item = &'a G1Affine> {
         self.gens.H_vec[self.share].iter().take(n)
     }
 }
@@ -298,8 +313,8 @@ mod tests {
         let gens = BulletproofGens::new(64, 8);
 
         let helper = |n: usize, m: usize| {
-            let agg_G: Vec<RistrettoPoint> = gens.G(n, m).cloned().collect();
-            let flat_G: Vec<RistrettoPoint> = gens
+            let agg_G: Vec<G1Affine> = gens.G(n, m).cloned().collect();
+            let flat_G: Vec<G1Affine> = gens
                 .G_vec
                 .iter()
                 .take(m)
@@ -307,8 +322,8 @@ mod tests {
                 .cloned()
                 .collect();
 
-            let agg_H: Vec<RistrettoPoint> = gens.H(n, m).cloned().collect();
-            let flat_H: Vec<RistrettoPoint> = gens
+            let agg_H: Vec<G1Affine> = gens.H(n, m).cloned().collect();
+            let flat_H: Vec<G1Affine> = gens
                 .H_vec
                 .iter()
                 .take(m)
@@ -342,11 +357,11 @@ mod tests {
         gen_resized.increase_capacity(64);
 
         let helper = |n: usize, m: usize| {
-            let gens_G: Vec<RistrettoPoint> = gens.G(n, m).cloned().collect();
-            let gens_H: Vec<RistrettoPoint> = gens.H(n, m).cloned().collect();
+            let gens_G: Vec<G1Affine> = gens.G(n, m).cloned().collect();
+            let gens_H: Vec<G1Affine> = gens.H(n, m).cloned().collect();
 
-            let resized_G: Vec<RistrettoPoint> = gen_resized.G(n, m).cloned().collect();
-            let resized_H: Vec<RistrettoPoint> = gen_resized.H(n, m).cloned().collect();
+            let resized_G: Vec<G1Affine> = gen_resized.G(n, m).cloned().collect();
+            let resized_H: Vec<G1Affine> = gen_resized.H(n, m).cloned().collect();
 
             assert_eq!(gens_G, resized_G);
             assert_eq!(gens_H, resized_H);

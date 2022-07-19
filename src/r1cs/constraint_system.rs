@@ -1,7 +1,7 @@
 //! Definition of the constraint system trait.
 
 use super::{LinearCombination, R1CSError, Variable};
-use curve25519_dalek::scalar::Scalar;
+use crate::curve::bs257::Fr;
 use merlin::Transcript;
 
 /// The interface for a constraint system, abstracting over the prover
@@ -52,7 +52,7 @@ pub trait ConstraintSystem {
     /// has the `right` assigned to zero and all its variables committed.
     ///
     /// Returns unconstrained `Variable` for use in further constraints.
-    fn allocate(&mut self, assignment: Option<Scalar>) -> Result<Variable, R1CSError>;
+    fn allocate(&mut self, assignment: Option<Fr>) -> Result<Variable, R1CSError>;
 
     /// Allocate variables `left`, `right`, and `out`
     /// with the implicit constraint that
@@ -63,7 +63,7 @@ pub trait ConstraintSystem {
     /// Returns `(left, right, out)` for use in further constraints.
     fn allocate_multiplier(
         &mut self,
-        input_assignments: Option<(Scalar, Scalar)>,
+        input_assignments: Option<(Fr, Fr)>,
     ) -> Result<(Variable, Variable, Variable), R1CSError>;
 
     /// Counts the amount of allocated multipliers.
@@ -131,5 +131,5 @@ pub trait RandomizedConstraintSystem: ConstraintSystem {
     ///     // ...
     /// })
     /// ```
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Scalar;
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr;
 }

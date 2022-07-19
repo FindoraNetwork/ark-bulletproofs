@@ -1,8 +1,10 @@
 //! Defines a `TranscriptProtocol` trait for using a Merlin transcript.
 
-use curve25519_dalek::ristretto::CompressedRistretto;
-use curve25519_dalek::scalar::Scalar;
+use crate::curve::bs257::{Fr, G1Affine};
+use ark_ff::to_bytes;
+use ark_std::{rand::SeedableRng, UniformRand, Zero};
 use merlin::Transcript;
+use rand_chacha::ChaChaRng;
 
 use crate::errors::ProofError;
 
@@ -23,21 +25,21 @@ pub trait TranscriptProtocol {
     fn r1cs_2phase_domain_sep(&mut self);
 
     /// Append a `scalar` with the given `label`.
-    fn append_scalar(&mut self, label: &'static [u8], scalar: &Scalar);
+    fn append_scalar(&mut self, label: &'static [u8], scalar: &Fr);
 
     /// Append a `point` with the given `label`.
-    fn append_point(&mut self, label: &'static [u8], point: &CompressedRistretto);
+    fn append_point(&mut self, label: &'static [u8], point: &G1Affine);
 
     /// Check that a point is not the identity, then append it to the
     /// transcript.  Otherwise, return an error.
     fn validate_and_append_point(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError>;
 
     /// Compute a `label`ed challenge variable.
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Scalar;
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr;
 }
 
 impl TranscriptProtocol for Transcript {
@@ -64,32 +66,31 @@ impl TranscriptProtocol for Transcript {
         self.append_message(b"dom-sep", b"r1cs-2phase");
     }
 
-    fn append_scalar(&mut self, label: &'static [u8], scalar: &Scalar) {
-        self.append_message(label, scalar.as_bytes());
+    fn append_scalar(&mut self, label: &'static [u8], scalar: &Fr) {
+        self.append_message(label, &to_bytes!(scalar).unwrap());
     }
 
-    fn append_point(&mut self, label: &'static [u8], point: &CompressedRistretto) {
-        self.append_message(label, point.as_bytes());
+    fn append_point(&mut self, label: &'static [u8], point: &G1Affine) {
+        self.append_message(label, &to_bytes!(point).unwrap());
     }
 
     fn validate_and_append_point(
         &mut self,
         label: &'static [u8],
-        point: &CompressedRistretto,
+        point: &G1Affine,
     ) -> Result<(), ProofError> {
-        use curve25519_dalek::traits::IsIdentity;
-
-        if point.is_identity() {
+        if point.is_zero() {
             Err(ProofError::VerificationError)
         } else {
-            Ok(self.append_message(label, point.as_bytes()))
+            Ok(self.append_message(label, &to_bytes!(point)?))
         }
     }
 
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Scalar {
-        let mut buf = [0u8; 64];
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr {
+        let mut buf = [0u8; 32];
         self.challenge_bytes(label, &mut buf);
 
-        Scalar::from_bytes_mod_order_wide(&buf)
+        let mut prng = ChaChaRng::from_seed(buf);
+        Fr::rand(&mut prng)
     }
 }

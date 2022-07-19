@@ -1,10 +1,13 @@
 #![allow(non_snake_case)]
 
-use core::borrow::BorrowMut;
-use core::mem;
-use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::{Identity, MultiscalarMul, VartimeMultiscalarMul};
+use ark_ec::msm;
+use ark_ff::{Field, PrimeField, UniformRand};
+use ark_std::{
+    borrow::BorrowMut,
+    iter, mem,
+    rand::{CryptoRng, RngCore},
+    One, Zero,
+};
 use merlin::Transcript;
 
 use super::{
@@ -12,10 +15,10 @@ use super::{
     RandomizedConstraintSystem, Variable,
 };
 
+use crate::curve::bs257::{BigIntType, Fr, G1Affine};
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::transcript::TranscriptProtocol;
-use rand_core::{CryptoRng, RngCore};
 
 /// A [`ConstraintSystem`] implementation for use by the verifier.
 ///
@@ -38,7 +41,7 @@ pub struct Verifier<T: BorrowMut<Transcript>> {
     /// `Missing`), so the `num_vars` isn't kept implicitly in the
     /// variable assignments.
     num_vars: usize,
-    V: Vec<CompressedRistretto>,
+    V: Vec<G1Affine>,
 
     /// This list holds closures that will be called in the second phase of the protocol,
     /// when non-randomized variables are committed.
@@ -80,15 +83,15 @@ impl<T: BorrowMut<Transcript>> ConstraintSystem for Verifier<T> {
         let o_var = Variable::MultiplierOutput(var);
 
         // Constrain l,r,o:
-        left.terms.push((l_var, -Scalar::one()));
-        right.terms.push((r_var, -Scalar::one()));
+        left.terms.push((l_var, -Fr::one()));
+        right.terms.push((r_var, -Fr::one()));
         self.constrain(left);
         self.constrain(right);
 
         (l_var, r_var, o_var)
     }
 
-    fn allocate(&mut self, _: Option<Scalar>) -> Result<Variable, R1CSError> {
+    fn allocate(&mut self, _: Option<Fr>) -> Result<Variable, R1CSError> {
         match self.pending_multiplier {
             None => {
                 let i = self.num_vars;
@@ -105,7 +108,7 @@ impl<T: BorrowMut<Transcript>> ConstraintSystem for Verifier<T> {
 
     fn allocate_multiplier(
         &mut self,
-        _: Option<(Scalar, Scalar)>,
+        _: Option<(Fr, Fr)>,
     ) -> Result<(Variable, Variable, Variable), R1CSError> {
         let var = self.num_vars;
         self.num_vars += 1;
@@ -155,13 +158,13 @@ impl<T: BorrowMut<Transcript>> ConstraintSystem for RandomizingVerifier<T> {
         self.verifier.multiply(left, right)
     }
 
-    fn allocate(&mut self, assignment: Option<Scalar>) -> Result<Variable, R1CSError> {
+    fn allocate(&mut self, assignment: Option<Fr>) -> Result<Variable, R1CSError> {
         self.verifier.allocate(assignment)
     }
 
     fn allocate_multiplier(
         &mut self,
-        input_assignments: Option<(Scalar, Scalar)>,
+        input_assignments: Option<(Fr, Fr)>,
     ) -> Result<(Variable, Variable, Variable), R1CSError> {
         self.verifier.allocate_multiplier(input_assignments)
     }
@@ -176,7 +179,7 @@ impl<T: BorrowMut<Transcript>> ConstraintSystem for RandomizingVerifier<T> {
 }
 
 impl<T: BorrowMut<Transcript>> RandomizedConstraintSystem for RandomizingVerifier<T> {
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Scalar {
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr {
         self.verifier
             .transcript
             .borrow_mut()
@@ -237,7 +240,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     ///
     /// Returns a pair of a Pedersen commitment (as a compressed Ristretto point),
     /// and a [`Variable`] corresponding to it, which can be used to form constraints.
-    pub fn commit(&mut self, commitment: CompressedRistretto) -> Variable {
+    pub fn commit(&mut self, commitment: G1Affine) -> Variable {
         let i = self.V.len();
         self.V.push(commitment);
 
@@ -262,18 +265,15 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     /// This has the same logic as `ProverCS::flattened_constraints()`
     /// but also computes the constant terms (which the prover skips
     /// because they're not needed to construct the proof).
-    fn flattened_constraints(
-        &mut self,
-        z: &Scalar,
-    ) -> (Vec<Scalar>, Vec<Scalar>, Vec<Scalar>, Vec<Scalar>, Scalar) {
+    fn flattened_constraints(&mut self, z: &Fr) -> (Vec<Fr>, Vec<Fr>, Vec<Fr>, Vec<Fr>, Fr) {
         let n = self.num_vars;
         let m = self.V.len();
 
-        let mut wL = vec![Scalar::zero(); n];
-        let mut wR = vec![Scalar::zero(); n];
-        let mut wO = vec![Scalar::zero(); n];
-        let mut wV = vec![Scalar::zero(); m];
-        let mut wc = Scalar::zero();
+        let mut wL = vec![Fr::zero(); n];
+        let mut wR = vec![Fr::zero(); n];
+        let mut wO = vec![Fr::zero(); n];
+        let mut wV = vec![Fr::zero(); m];
+        let mut wc = Fr::zero();
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
@@ -339,13 +339,13 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     // proof.S2
     // self.V
     // T_1, T3, T4, T5, T6
-    // proof.ipp_proof.L_vec.iter().map(|L_i| L_i.decompress()))
+    // proof.ipp_proof.L_vec
     // proof.ipp_proof.R_vec
     pub(super) fn verification_scalars(
         mut self,
         proof: &R1CSProof,
         bp_gens: &BulletproofGens,
-    ) -> Result<(Self, Vec<Scalar>), R1CSError> {
+    ) -> Result<(Self, Vec<Fr>), R1CSError> {
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
         // but this suffix provides safe disambiguation because each variable
@@ -371,7 +371,6 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
         use crate::inner_product_proof::inner_product;
         use crate::util;
-        use std::iter;
 
         if bp_gens.gens_capacity < padded_n {
             return Err(R1CSError::InvalidGeneratorsLength);
@@ -411,20 +410,18 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         let a = proof.ipp_proof.a;
         let b = proof.ipp_proof.b;
 
-        let y_inv = y.invert();
-        let y_inv_vec = util::exp_iter(y_inv)
-            .take(padded_n)
-            .collect::<Vec<Scalar>>();
+        let y_inv = y.inverse().unwrap();
+        let y_inv_vec = util::exp_iter(y_inv).take(padded_n).collect::<Vec<Fr>>();
         let yneg_wR = wR
             .into_iter()
             .zip(y_inv_vec.iter())
             .map(|(wRi, exp_y_inv)| wRi * exp_y_inv)
-            .chain(iter::repeat(Scalar::zero()).take(pad))
-            .collect::<Vec<Scalar>>();
+            .chain(iter::repeat(Fr::zero()).take(pad))
+            .collect::<Vec<Fr>>();
 
         let delta = inner_product(&yneg_wR[0..n], &wL);
 
-        let u_for_g = iter::repeat(Scalar::one())
+        let u_for_g = iter::repeat(Fr::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad));
         let u_for_h = u_for_g.clone();
@@ -441,10 +438,10 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
             .iter()
             .zip(u_for_h)
             .zip(s.iter().rev().take(padded_n))
-            .zip(wL.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
-            .zip(wO.into_iter().chain(iter::repeat(Scalar::zero()).take(pad)))
+            .zip(wL.into_iter().chain(iter::repeat(Fr::zero()).take(pad)))
+            .zip(wO.into_iter().chain(iter::repeat(Fr::zero()).take(pad)))
             .map(|((((y_inv_i, u_or_1), s_i_inv), wLi), wOi)| {
-                u_or_1 * (y_inv_i * (x * wLi + wOi - b * s_i_inv) - Scalar::one())
+                u_or_1 * (*y_inv_i * (x * wLi + wOi - b * s_i_inv) - Fr::one())
             })
             .collect();
 
@@ -457,7 +454,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
             .borrow_mut()
             .build_rng()
             .finalize(&mut thread_rng());
-        let r = Scalar::random(&mut rng);
+        let r = Fr::rand(&mut rng);
 
         let xx = x * x;
         let rxx = r * xx;
@@ -466,14 +463,14 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
         // group the T_scalars and T_points together
         let T_scalars = [r * x, rxx * x, rxx * xx, rxx * xxx, rxx * xx * xx];
 
-        let mut scalars: Vec<Scalar> = vec![];
+        let mut scalars: Vec<Fr> = vec![];
         scalars.push(w * (proof.t_x - a * b) + r * (xx * (wc + delta) - proof.t_x));
         scalars.push(-proof.e_blinding - r * proof.t_x_blinding);
         scalars.extend_from_slice(&g_scalars);
         scalars.extend_from_slice(&h_scalars);
         scalars.extend_from_slice(&[x, xx, xxx, u * x, u * xx, u * xxx]);
         for wVi in wV.iter() {
-            scalars.push(wVi * rxx);
+            scalars.push(*wVi * rxx);
         }
         scalars.extend_from_slice(&T_scalars);
         scalars.extend_from_slice(&u_sq);
@@ -512,29 +509,30 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
 
         let padded_n = self.num_vars.next_power_of_two();
 
-        use std::iter;
-        let mega_check = RistrettoPoint::optional_multiscalar_mul(
-            scalars,
-            iter::once(Some(pc_gens.B))
-                .chain(iter::once(Some(pc_gens.B_blinding)))
-                .chain(gens.G(padded_n).map(|&G_i| Some(G_i)))
-                .chain(gens.H(padded_n).map(|&H_i| Some(H_i)))
-                .chain(iter::once(proof.A_I1.decompress()))
-                .chain(iter::once(proof.A_O1.decompress()))
-                .chain(iter::once(proof.S1.decompress()))
-                .chain(iter::once(proof.A_I2.decompress()))
-                .chain(iter::once(proof.A_O2.decompress()))
-                .chain(iter::once(proof.S2.decompress()))
-                .chain(self.V.iter().map(|V_i| V_i.decompress()))
-                .chain(T_points.iter().map(|T_i| T_i.decompress()))
-                .chain(proof.ipp_proof.L_vec.iter().map(|L_i| L_i.decompress()))
-                .chain(proof.ipp_proof.R_vec.iter().map(|R_i| R_i.decompress())),
-        )
-        .ok_or_else(|| R1CSError::VerificationError)?;
+        let mega_check = msm::VariableBase::msm(
+            &iter::once(&pc_gens.B)
+                .chain(iter::once(&pc_gens.B_blinding))
+                .chain(gens.G(padded_n))
+                .chain(gens.H(padded_n))
+                .chain(iter::once(&proof.A_I1))
+                .chain(iter::once(&proof.A_O1))
+                .chain(iter::once(&proof.S1))
+                .chain(iter::once(&proof.A_I2))
+                .chain(iter::once(&proof.A_O2))
+                .chain(iter::once(&proof.S2))
+                .chain(self.V.iter())
+                .chain(T_points.iter())
+                .chain(proof.ipp_proof.L_vec.iter())
+                .chain(proof.ipp_proof.R_vec.iter())
+                .map(|f| f.clone())
+                .collect::<Vec<G1Affine>>(),
+            &scalars
+                .iter()
+                .map(|f| f.into_repr())
+                .collect::<Vec<BigIntType>>(),
+        );
 
-        use curve25519_dalek::traits::IsIdentity;
-
-        if !mega_check.is_identity() {
+        if !mega_check.is_zero() {
             return Err(R1CSError::VerificationError);
         }
 
@@ -571,7 +569,7 @@ where
     let mut all_elems = vec![];
 
     for _ in 0..(2 * max_n_padded + 2) {
-        all_scalars.push(Scalar::zero());
+        all_scalars.push(Fr::zero());
     }
     all_elems.push(pc_gens.B);
     all_elems.push(pc_gens.B_blinding);
@@ -588,8 +586,8 @@ where
         .zip(proofs.iter())
         .zip(verification_scalars.iter())
     {
-        let alpha = Scalar::random(prng);
-        let scaled_scalars: Vec<Scalar> = scalars.into_iter().map(|s| alpha * s).collect();
+        let alpha = Fr::rand(prng);
+        let scaled_scalars: Vec<Fr> = scalars.into_iter().map(|s| alpha * s).collect();
         let padded_n = verifier.num_vars.next_power_of_two();
         all_scalars[0] += scaled_scalars[0]; // B
         all_scalars[1] += scaled_scalars[1]; // B_blinding
@@ -608,41 +606,30 @@ where
         for s in (&scaled_scalars[2 + 2 * padded_n..]).iter() {
             all_scalars.push(*s);
         }
-        all_elems.push(proof.A_I1.decompress().unwrap());
-        all_elems.push(proof.A_O1.decompress().unwrap());
-        all_elems.push(proof.S1.decompress().unwrap());
-        all_elems.push(proof.A_I2.decompress().unwrap());
-        all_elems.push(proof.A_O2.decompress().unwrap());
-        all_elems.push(proof.S2.decompress().unwrap());
-        let V: Vec<_> = verifier
-            .V
-            .iter()
-            .map(|Vi| Vi.decompress().unwrap())
-            .collect();
-        all_elems.extend_from_slice(V.as_slice());
-        all_elems.push(proof.T_1.decompress().unwrap());
-        all_elems.push(proof.T_3.decompress().unwrap());
-        all_elems.push(proof.T_4.decompress().unwrap());
-        all_elems.push(proof.T_5.decompress().unwrap());
-        all_elems.push(proof.T_6.decompress().unwrap());
-        let L_vec: Vec<_> = proof
-            .ipp_proof
-            .L_vec
-            .iter()
-            .map(|L| L.decompress().unwrap())
-            .collect();
-        let R_vec: Vec<_> = proof
-            .ipp_proof
-            .R_vec
-            .iter()
-            .map(|R| R.decompress().unwrap())
-            .collect();
-        all_elems.extend_from_slice(&L_vec);
-        all_elems.extend_from_slice(&R_vec);
+        all_elems.push(proof.A_I1);
+        all_elems.push(proof.A_O1);
+        all_elems.push(proof.S1);
+        all_elems.push(proof.A_I2);
+        all_elems.push(proof.A_O2);
+        all_elems.push(proof.S2);
+        all_elems.extend_from_slice(verifier.V.as_slice());
+        all_elems.push(proof.T_1);
+        all_elems.push(proof.T_3);
+        all_elems.push(proof.T_4);
+        all_elems.push(proof.T_5);
+        all_elems.push(proof.T_6);
+        all_elems.extend_from_slice(&proof.ipp_proof.L_vec);
+        all_elems.extend_from_slice(&proof.ipp_proof.R_vec);
     }
 
-    let multi_exp = RistrettoPoint::multiscalar_mul(all_scalars, all_elems);
-    if multi_exp != RistrettoPoint::identity() {
+    let multi_exp = msm::VariableBase::msm(
+        &all_elems,
+        &all_scalars
+            .iter()
+            .map(|f| f.into_repr())
+            .collect::<Vec<BigIntType>>(),
+    );
+    if !multi_exp.is_zero() {
         Err(R1CSError::VerificationError)
     } else {
         Ok(())

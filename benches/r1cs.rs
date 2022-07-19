@@ -1,7 +1,10 @@
 #![allow(non_snake_case)]
+#![allow(deprecated)]
 
 #[macro_use]
 extern crate criterion;
+
+use ark_std::UniformRand;
 use criterion::Criterion;
 
 // Code below copied from ../tests/r1cs.rs
@@ -14,19 +17,15 @@ use criterion::Criterion;
 // something to avoid the duplication.
 
 extern crate bulletproofs;
-extern crate curve25519_dalek;
 extern crate merlin;
 extern crate rand;
 
+use bulletproofs::curve::bs257::{Fr, G1Affine};
 use bulletproofs::r1cs::*;
 use bulletproofs::{BulletproofGens, PedersenGens};
-use curve25519_dalek::ristretto::CompressedRistretto;
-use curve25519_dalek::scalar::Scalar;
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
-
-// Shuffle gadget (documented in markdown file)
 
 /// A proof-of-shuffle.
 struct ShuffleProof(R1CSProof);
@@ -82,16 +81,9 @@ impl ShuffleProof {
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
-        input: &[Scalar],
-        output: &[Scalar],
-    ) -> Result<
-        (
-            ShuffleProof,
-            Vec<CompressedRistretto>,
-            Vec<CompressedRistretto>,
-        ),
-        R1CSError,
-    > {
+        input: &[Fr],
+        output: &[Fr],
+    ) -> Result<(ShuffleProof, Vec<G1Affine>, Vec<G1Affine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();
@@ -106,12 +98,12 @@ impl ShuffleProof {
 
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()
-            .map(|v| prover.commit(*v, Scalar::random(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
             .unzip();
 
         let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
-            .map(|v| prover.commit(*v, Scalar::random(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
             .unzip();
 
         ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
@@ -129,8 +121,8 @@ impl ShuffleProof {
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
-        input_commitments: &Vec<CompressedRistretto>,
-        output_commitments: &Vec<CompressedRistretto>,
+        input_commitments: &Vec<G1Affine>,
+        output_commitments: &Vec<G1Affine>,
     ) -> Result<(), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
@@ -174,9 +166,7 @@ fn bench_kshuffle_prove(c: &mut Criterion) {
             // Generate inputs and outputs to kshuffle
             let mut rng = rand::thread_rng();
             let (min, max) = (0u64, u64::MAX);
-            let input: Vec<Scalar> = (0..*k)
-                .map(|_| Scalar::from(rng.gen_range(min, max)))
-                .collect();
+            let input: Vec<Fr> = (0..*k).map(|_| Fr::from(rng.gen_range(min..max))).collect();
             let mut output = input.clone();
             output.shuffle(&mut rand::thread_rng());
 
@@ -216,9 +206,7 @@ fn bench_kshuffle_verify(c: &mut Criterion) {
                 // Generate inputs and outputs to kshuffle
                 let mut rng = rand::thread_rng();
                 let (min, max) = (0u64, u64::MAX);
-                let input: Vec<Scalar> = (0..*k)
-                    .map(|_| Scalar::from(rng.gen_range(min, max)))
-                    .collect();
+                let input: Vec<Fr> = (0..*k).map(|_| Fr::from(rng.gen_range(min..max))).collect();
                 let mut output = input.clone();
                 output.shuffle(&mut rand::thread_rng());
 

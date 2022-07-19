@@ -1,19 +1,15 @@
 #![allow(non_snake_case)]
 
-extern crate bulletproofs;
-extern crate curve25519_dalek;
-extern crate merlin;
-extern crate rand;
-
-use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
-use curve25519_dalek::ristretto::CompressedRistretto;
-use curve25519_dalek::scalar::Scalar;
+use ark_ff::UniformRand;
+use ark_std::rand::seq::SliceRandom;
+use ark_std::rand::thread_rng;
+use ark_std::One;
+use bulletproofs::{
+    curve::bs257::{Fr, G1Affine},
+    r1cs::*,
+    BulletproofGens, PedersenGens,
+};
 use merlin::Transcript;
-use rand::seq::SliceRandom;
-use rand::thread_rng;
-
-// Shuffle gadget (documented in markdown file)
 
 /// A proof-of-shuffle.
 struct ShuffleProof(R1CSProof);
@@ -69,16 +65,9 @@ impl ShuffleProof {
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
-        input: &[Scalar],
-        output: &[Scalar],
-    ) -> Result<
-        (
-            ShuffleProof,
-            Vec<CompressedRistretto>,
-            Vec<CompressedRistretto>,
-        ),
-        R1CSError,
-    > {
+        input: &[Fr],
+        output: &[Fr],
+    ) -> Result<(ShuffleProof, Vec<G1Affine>, Vec<G1Affine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();
@@ -93,12 +82,12 @@ impl ShuffleProof {
 
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()
-            .map(|v| prover.commit(*v, Scalar::random(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
             .unzip();
 
         let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
-            .map(|v| prover.commit(*v, Scalar::random(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
             .unzip();
 
         ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
@@ -116,8 +105,8 @@ impl ShuffleProof {
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
-        input_commitments: &Vec<CompressedRistretto>,
-        output_commitments: &Vec<CompressedRistretto>,
+        input_commitments: &Vec<G1Affine>,
+        output_commitments: &Vec<G1Affine>,
     ) -> Result<(), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
@@ -155,9 +144,7 @@ fn kshuffle_helper(k: usize) {
         // Randomly generate inputs and outputs to kshuffle
         let mut rng = rand::thread_rng();
         let (min, max) = (0u64, u64::MAX);
-        let input: Vec<Scalar> = (0..k)
-            .map(|_| Scalar::from(rng.gen_range(min..max)))
-            .collect();
+        let input: Vec<Fr> = (0..k).map(|_| Fr::from(rng.gen_range(min..max))).collect();
         let mut output = input.clone();
         output.shuffle(&mut rand::thread_rng());
 
@@ -248,7 +235,7 @@ fn example_gadget_proof(
     b2: u64,
     c1: u64,
     c2: u64,
-) -> Result<(R1CSProof, Vec<CompressedRistretto>), R1CSError> {
+) -> Result<(R1CSProof, Vec<G1Affine>), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
     // 1. Create a prover
@@ -257,7 +244,7 @@ fn example_gadget_proof(
     // 2. Commit high-level variables
     let (commitments, vars): (Vec<_>, Vec<_>) = [a1, a2, b1, b2, c1]
         .iter()
-        .map(|x| prover.commit(Scalar::from(*x), Scalar::random(&mut thread_rng())))
+        .map(|x| prover.commit(Fr::from(*x), Fr::rand(&mut thread_rng())))
         .unzip();
 
     // 3. Build a CS
@@ -268,7 +255,7 @@ fn example_gadget_proof(
         vars[2].into(),
         vars[3].into(),
         vars[4].into(),
-        Scalar::from(c2).into(),
+        Fr::from(c2).into(),
     );
 
     // 4. Make a proof
@@ -283,7 +270,7 @@ fn example_gadget_verify(
     bp_gens: &BulletproofGens,
     c2: u64,
     proof: R1CSProof,
-    commitments: Vec<CompressedRistretto>,
+    commitments: Vec<G1Affine>,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
@@ -301,7 +288,7 @@ fn example_gadget_verify(
         vars[2].into(),
         vars[3].into(),
         vars[4].into(),
-        Scalar::from(c2).into(),
+        Fr::from(c2).into(),
     );
 
     // 4. Verify the proof
@@ -341,7 +328,7 @@ fn example_gadget_roundtrip_serialization_helper(
 
     let (proof, commitments) = example_gadget_proof(&pc_gens, &bp_gens, a1, a2, b1, b2, c1, c2)?;
 
-    let proof = proof.to_bytes();
+    let proof = proof.to_bytes()?;
 
     let proof = R1CSProof::from_bytes(&proof)?;
 
@@ -373,7 +360,7 @@ pub fn range_proof<CS: ConstraintSystem>(
     v_assignment: Option<u64>,
     n: usize,
 ) -> Result<(), R1CSError> {
-    let mut exp_2 = Scalar::one();
+    let mut exp_2 = Fr::one();
     for i in 0..n {
         // Create low-level variables and add them to constraints
         let (a, b, o) = cs.allocate_multiplier(v_assignment.map(|q| {
@@ -432,7 +419,7 @@ fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
 
         let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-        let (com, var) = prover.commit(v_val.into(), Scalar::random(&mut rng));
+        let (com, var) = prover.commit(v_val.into(), Fr::rand(&mut rng));
         assert!(range_proof(&mut prover, var.into(), Some(v_val), n).is_ok());
 
         let proof = prover.prove(&bp_gens)?;
@@ -501,7 +488,7 @@ fn batch_range_proof_helper(v_vals: &[(u64, usize)]) -> Result<(), R1CSError> {
 
             let mut prover = Prover::new(&pc_gens, &mut prover_transcript);
 
-            let (com, var) = prover.commit(Scalar::from(*v), Scalar::random(&mut rng));
+            let (com, var) = prover.commit(Fr::from(*v), Fr::rand(&mut rng));
             assert!(range_proof(&mut prover, var.into(), Some(*v), *n).is_ok());
 
             let proof = prover.prove(&bp_gens)?;
