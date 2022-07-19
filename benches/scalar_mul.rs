@@ -339,7 +339,7 @@ fn prove(c: &mut Criterion) {
             .add(public_key.neg());
 
         b.iter(|| {
-            let mut prover_transcript = Transcript::new(b"ShuffleProofTest");
+            let mut prover_transcript = Transcript::new(b"ScalarMulProofBench");
             ScalarMulProof::prove(
                 &mut rng,
                 &pc_gens,

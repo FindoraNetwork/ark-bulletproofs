@@ -336,7 +336,7 @@ fn scalar_mul_test() {
         .add(public_key.neg());
 
     let (proof, commitments) = {
-        let mut prover_transcript = Transcript::new(b"ShuffleProofTest");
+        let mut prover_transcript = Transcript::new(b"ScalarMulProofTest");
         ScalarMulProof::prove(
             &mut rng,
             &pc_gens,
@@ -351,7 +351,7 @@ fn scalar_mul_test() {
     };
 
     {
-        let mut verifier_transcript = Transcript::new(b"ShuffleProofTest");
+        let mut verifier_transcript = Transcript::new(b"ScalarMulProofTest");
         assert!(proof
             .verify(
                 &pc_gens,
