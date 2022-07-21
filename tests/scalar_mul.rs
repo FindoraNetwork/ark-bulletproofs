@@ -7,9 +7,9 @@ use ark_std::{
     ops::{Add, Neg},
     One,
 };
-use bulletproofs::curve::secp256k1::{Fq, Fr, FrParameters, G1Affine};
-use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
+use bulletproofs_bs257::curve::secp256k1::{Fq, Fr, FrParameters, G1Affine};
+use bulletproofs_bs257::r1cs::*;
+use bulletproofs_bs257::{BulletproofGens, PedersenGens};
 use digest::Digest;
 use merlin::Transcript;
 use rand_chacha::ChaChaRng;
@@ -236,7 +236,13 @@ impl ScalarMulProof {
         scalar: &Fr,
         point_r_divided_by_r: &G1Affine,
         point_g_times_z_divided_by_r: &G1Affine,
-    ) -> Result<(ScalarMulProof, Vec<bulletproofs::curve::bs257::G1Affine>), R1CSError> {
+    ) -> Result<
+        (
+            ScalarMulProof,
+            Vec<bulletproofs_bs257::curve::bs257::G1Affine>,
+        ),
+        R1CSError,
+    > {
         // 1. Sanity-check if the statement is valid.
         assert_eq!(
             point_r_divided_by_r.mul(scalar.into_repr()),
@@ -287,7 +293,7 @@ impl ScalarMulProof {
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
-        commitments: &Vec<bulletproofs::curve::bs257::G1Affine>,
+        commitments: &Vec<bulletproofs_bs257::curve::bs257::G1Affine>,
         point_r_divided_by_r: &G1Affine,
         point_g_times_z_divided_by_r: &G1Affine,
     ) -> Result<(), R1CSError> {
@@ -320,8 +326,6 @@ impl ScalarMulProof {
 
 #[test]
 fn scalar_mul_test() {
-    use rand::Rng;
-
     let pc_gens = PedersenGens::default();
     let bp_gens = BulletproofGens::new(2048, 1);
 

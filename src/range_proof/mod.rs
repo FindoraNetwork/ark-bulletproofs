@@ -85,8 +85,8 @@ impl RangeProof {
     /// extern crate merlin;
     /// use merlin::Transcript;
     ///
-    /// extern crate bulletproofs;
-    /// use bulletproofs::{BulletproofGens, PedersenGens, RangeProof, curve::bs257::Fr};
+    /// extern crate bulletproofs_bs257;
+    /// use bulletproofs_bs257::{BulletproofGens, PedersenGens, RangeProof, curve::bs257::Fr};
     ///
     /// use ark_ff::UniformRand;
     ///
@@ -183,8 +183,8 @@ impl RangeProof {
     /// extern crate merlin;
     /// use merlin::Transcript;
     ///
-    /// extern crate bulletproofs;
-    /// use bulletproofs::{BulletproofGens, PedersenGens, RangeProof, curve::bs257::Fr};
+    /// extern crate bulletproofs_bs257;
+    /// use bulletproofs_bs257::{BulletproofGens, PedersenGens, RangeProof, curve::bs257::Fr};
     ///
     /// use ark_ff::UniformRand;
     ///

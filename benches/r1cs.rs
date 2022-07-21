@@ -16,13 +16,13 @@ use criterion::Criterion;
 // someone wants to figure a way to use #[path] attributes or
 // something to avoid the duplication.
 
-extern crate bulletproofs;
+extern crate bulletproofs_bs257;
 extern crate merlin;
 extern crate rand;
 
-use bulletproofs::curve::bs257::{Fr, G1Affine};
-use bulletproofs::r1cs::*;
-use bulletproofs::{BulletproofGens, PedersenGens};
+use bulletproofs_bs257::curve::bs257::{Fr, G1Affine};
+use bulletproofs_bs257::r1cs::*;
+use bulletproofs_bs257::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;

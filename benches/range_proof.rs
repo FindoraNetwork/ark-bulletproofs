@@ -12,9 +12,9 @@ use rand::Rng;
 
 use merlin::Transcript;
 
-use bulletproofs::curve::bs257::Fr;
-use bulletproofs::RangeProof;
-use bulletproofs::{BulletproofGens, PedersenGens};
+use bulletproofs_bs257::curve::bs257::Fr;
+use bulletproofs_bs257::RangeProof;
+use bulletproofs_bs257::{BulletproofGens, PedersenGens};
 
 static AGGREGATION_SIZES: [usize; 6] = [1, 2, 4, 8, 16, 32];
 
