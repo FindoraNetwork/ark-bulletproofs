@@ -222,7 +222,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' G generators with given size `n`.
-    pub(crate) fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
+    pub fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
         AggregatedGensIter {
             n,
             m,
@@ -233,7 +233,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' H generators with given size `n`.
-    pub(crate) fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
+    pub fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
         AggregatedGensIter {
             n,
             m,

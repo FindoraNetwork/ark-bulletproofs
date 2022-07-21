@@ -74,10 +74,6 @@ name = "scalar_mul"
 required-features = ["yoloproofs"]
 
 [[bench]]
-name = "range_proof"
-harness = false
-
-[[bench]]
 name = "generators"
 harness = false
 
