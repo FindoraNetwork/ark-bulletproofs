@@ -69,16 +69,8 @@ parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
 name = "r1cs"
 required-features = ["yoloproofs"]
 
-[[test]]
-name = "scalar_mul"
-required-features = ["yoloproofs"]
-
 [[bench]]
 name = "generators"
-harness = false
-
-[[bench]]
-name = "scalar_mul"
 harness = false
 
 [[bench]]
