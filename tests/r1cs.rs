@@ -98,9 +98,8 @@ impl ShuffleProof {
 
 impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
-    pub fn verify<'a, 'b, R: CryptoRng + RngCore>(
+    pub fn verify<'a, 'b>(
         &self,
-        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -127,7 +126,7 @@ impl ShuffleProof {
 
         ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
 
-        verifier.verify(prng, &self.0, &pc_gens, &bp_gens)?;
+        verifier.verify(&self.0, &pc_gens, &bp_gens)?;
         Ok(())
     }
 }
@@ -161,10 +160,8 @@ fn kshuffle_helper(k: usize) {
 
     {
         let mut verifier_transcript = Transcript::new(b"ShuffleProofTest");
-        let mut rng = rand::thread_rng();
         assert!(proof
             .verify(
-                &mut rng,
                 &pc_gens,
                 &bp_gens,
                 &mut verifier_transcript,
@@ -283,7 +280,6 @@ fn example_gadget_verify(
     commitments: Vec<G1Affine>,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
-    let mut rng = thread_rng();
 
     // 1. Create a verifier
     let mut verifier = Verifier::new(&mut transcript);
@@ -304,7 +300,7 @@ fn example_gadget_verify(
 
     // 4. Verify the proof
     verifier
-        .verify(&mut rng, &proof, &pc_gens, &bp_gens)
+        .verify(&proof, &pc_gens, &bp_gens)
         .map_err(|_| R1CSError::VerificationError)
 }
 
@@ -448,8 +444,7 @@ fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
     assert!(range_proof(&mut verifier, var.into(), None, n).is_ok());
 
     // Verifier verifies proof
-    let mut rng = rand::thread_rng();
-    verifier.verify(&mut rng, &proof, &pc_gens, &bp_gens)
+    verifier.verify(&proof, &pc_gens, &bp_gens)
 }
 
 #[test]

@@ -341,9 +341,8 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     // T_1, T3, T4, T5, T6
     // proof.ipp_proof.L_vec
     // proof.ipp_proof.R_vec
-    pub(super) fn verification_scalars<R: CryptoRng + RngCore>(
+    pub(super) fn verification_scalars(
         mut self,
-        prng: &mut R,
         proof: &R1CSProof,
         bp_gens: &BulletproofGens,
     ) -> Result<(Self, Vec<Fr>), R1CSError> {
@@ -446,11 +445,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
             })
             .collect();
 
-        // Create a `TranscriptRng` from the transcript. The verifier
-        // has no witness data to commit, so this just mixes external
-        // randomness into the existing transcript.
-        let mut rng = self.transcript.borrow_mut().build_rng().finalize(prng);
-        let r = Fr::rand(&mut rng);
+        let r = self.transcript.borrow_mut().challenge_scalar(b"r");
 
         let xx = x * x;
         let rxx = r * xx;
@@ -480,25 +475,23 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
     /// [`BulletproofGens`] should have `gens_capacity` greater than
     /// the number of multiplication constraints that will eventually
     /// be added into the constraint system.
-    pub fn verify<R: CryptoRng + RngCore>(
+    pub fn verify(
         self,
-        prng: &mut R,
         proof: &R1CSProof,
         pc_gens: &PedersenGens,
         bp_gens: &BulletproofGens,
     ) -> Result<(), R1CSError> {
-        self.verify_and_return_transcript(prng, proof, pc_gens, bp_gens)
+        self.verify_and_return_transcript(proof, pc_gens, bp_gens)
             .map(|_| ())
     }
     /// Same as `verify`, but also returns the transcript back to the user.
-    pub fn verify_and_return_transcript<R: CryptoRng + RngCore>(
+    pub fn verify_and_return_transcript(
         mut self,
-        prng: &mut R,
         proof: &R1CSProof,
         pc_gens: &PedersenGens,
         bp_gens: &BulletproofGens,
     ) -> Result<T, R1CSError> {
-        let (verifier, scalars) = self.verification_scalars(prng, proof, bp_gens)?;
+        let (verifier, scalars) = self.verification_scalars(proof, bp_gens)?;
         self = verifier;
         let T_points = [proof.T_1, proof.T_3, proof.T_4, proof.T_5, proof.T_6];
 
@@ -554,7 +547,7 @@ where
     let mut verification_scalars = vec![];
     for (verifier, proof) in instances.into_iter() {
         // verification_scalars method is mutable, need to run before obtaining verifier.num_vars
-        let (verifier, scalars) = verifier.verification_scalars(prng, proof, bp_gens)?;
+        let (verifier, scalars) = verifier.verification_scalars(proof, bp_gens)?;
         let n = verifier.num_vars.next_power_of_two();
         if n > max_n_padded {
             max_n_padded = n;

@@ -114,9 +114,8 @@ impl ShuffleProof {
 
 impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
-    pub fn verify<'a, 'b, R: CryptoRng + RngCore>(
+    pub fn verify<'a, 'b>(
         &self,
-        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -143,7 +142,7 @@ impl ShuffleProof {
 
         ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
 
-        verifier.verify(prng, &self.0, &pc_gens, &bp_gens)
+        verifier.verify(&self.0, &pc_gens, &bp_gens)
     }
 }
 
@@ -233,10 +232,8 @@ fn bench_kshuffle_verify(c: &mut Criterion) {
             // Verify kshuffle proof
             b.iter(|| {
                 let mut verifier_transcript = Transcript::new(b"ShuffleBenchmark");
-                let mut rng = rand::thread_rng();
                 proof
                     .verify(
-                        &mut rng,
                         &pc_gens,
                         &bp_gens,
                         &mut verifier_transcript,
