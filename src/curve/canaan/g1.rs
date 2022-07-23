@@ -1,4 +1,4 @@
-use crate::curve::bs257::{Fq, Fr};
+use crate::curve::canaan::{Fq, Fr};
 use ark_ec::{
     short_weierstrass_jacobian::{GroupAffine, GroupProjective},
     ModelParameters, SWModelParameters,
@@ -61,7 +61,7 @@ pub const G1_GENERATOR_Y: Fq = field_new!(
 
 #[cfg(test)]
 mod test {
-    use crate::curve::bs257::g1::{G1Affine, G1Projective, Parameters};
+    use crate::curve::canaan::g1::{G1Affine, G1Projective, Parameters};
     use ark_algebra_test_templates::{
         curves::{curve_tests, sw_tests},
         groups::group_test,

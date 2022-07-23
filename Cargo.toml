@@ -1,24 +1,18 @@
 [package]
-name = "bulletproofs-bs257"
-# Before doing a release:
-# - update version field 
-# - update html_root_url
-# - ensure yoloproofs was disabled in an atomic (revertable) commit
-# - update CHANGELOG
+name = "bulletproofs-canaan"
 version = "2.0.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
            "Oleg Andreev <oleganza@gmail.com>"]
 readme = "README.md"
 license = "MIT"
-repository = "https://github.com/dalek-cryptography/bulletproofs"
+repository = "https://github.com/FindoraNetwork/bulletproofs-canaan"
 categories = ["cryptography"]
 keywords = ["cryptography", "crypto", "ristretto", "zero-knowledge", "bulletproofs"]
 description = "A pure-Rust implementation of Bulletproofs using Ristretto"
 edition = "2018"
 
 [dependencies]
-subtle = { version = "2", default-features = false }
 sha3 = { version = "0.10", default-features = false }
 digest = { version = "0.10", default-features = false }
 rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
@@ -55,7 +49,6 @@ default-features = false
 features = ["std"]
 
 [dev-dependencies]
-hex = "0.3"
 criterion = "0.3"
 rand_chacha = "0.3"
 

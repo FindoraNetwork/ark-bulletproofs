@@ -122,7 +122,7 @@ impl FpParameters for FqParameters {
 
 #[cfg(test)]
 mod test {
-    use crate::curve::bs257::fq::Fq;
+    use crate::curve::canaan::fq::Fq;
     use ark_algebra_test_templates::fields::{field_test, primefield_test};
     use ark_ff::{Field, One, UniformRand, Zero};
     use ark_std::{

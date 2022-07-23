@@ -4,8 +4,8 @@ use ark_ff::UniformRand;
 use ark_std::rand::seq::SliceRandom;
 use ark_std::rand::thread_rng;
 use ark_std::One;
-use bulletproofs_bs257::{
-    curve::bs257::{Fr, G1Affine},
+use bulletproofs_canaan::{
+    curve::canaan::{Fr, G1Affine},
     r1cs::*,
     BulletproofGens, PedersenGens,
 };

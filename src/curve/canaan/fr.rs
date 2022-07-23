@@ -121,7 +121,7 @@ impl FpParameters for FrParameters {
 
 #[cfg(test)]
 mod test {
-    use crate::curve::bs257::fr::Fr;
+    use crate::curve::canaan::fr::Fr;
     use ark_algebra_test_templates::fields::{field_test, primefield_test};
     use ark_ff::{Field, One, UniformRand, Zero};
     use ark_std::{

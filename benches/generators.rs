@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use bulletproofs_bs257::{BulletproofGens, PedersenGens};
+use bulletproofs_canaan::{BulletproofGens, PedersenGens};
 
 #[macro_use]
 extern crate criterion;

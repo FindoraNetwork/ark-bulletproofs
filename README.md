@@ -1,11 +1,10 @@
-# Bulletproofs over BS-257
+# Bulletproofs over the Canaan curve
 
 This repo builds over [Bulletproofs][bp_website] but replaces the 
-Ristretto group with another group over a newly sampled curve, BS-257.
-Here, BS refers to Broker and Stevenhagen, whose complex multiplication
-method has been used in finding this curve.
+Ristretto group with another group over a newly sampled curve, named Canaan, 
+found through the use of the complex multiplication by  Broker and Stevenhagen.
 
-An important property of BS-257 is that it can embed secp256k1. A severe
+An important property of the Canaan curve is that it can embed secp256k1. A severe
 limitation, as a result, is that its scalar field does not have a lot of 
 2-arity, and therefore preventing a large class of protocols based on FFT
 to run on the native field.

@@ -1,7 +1,7 @@
 //! Definition of the constraint system trait.
 
 use super::{LinearCombination, R1CSError, Variable};
-use crate::curve::bs257::Fr;
+use crate::curve::canaan::Fr;
 use merlin::Transcript;
 
 /// The interface for a constraint system, abstracting over the prover
