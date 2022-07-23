@@ -1,14 +1,14 @@
 #![allow(non_snake_case)]
 
-use ark_ff::UniformRand;
-use ark_std::rand::seq::SliceRandom;
-use ark_std::rand::thread_rng;
-use ark_std::One;
-use bulletproofs_canaan::{
+use ark_bulletproofs_canaan::{
     curve::canaan::{Fr, G1Affine},
     r1cs::*,
     BulletproofGens, PedersenGens,
 };
+use ark_ff::UniformRand;
+use ark_std::rand::seq::SliceRandom;
+use ark_std::rand::thread_rng;
+use ark_std::One;
 use merlin::Transcript;
 use rand_core::{CryptoRng, RngCore};
 

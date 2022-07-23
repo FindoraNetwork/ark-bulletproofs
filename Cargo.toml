@@ -1,5 +1,5 @@
 [package]
-name = "bulletproofs-canaan"
+name = "ark-bulletproofs-canaan"
 version = "2.0.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
