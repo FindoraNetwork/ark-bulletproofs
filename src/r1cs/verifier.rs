@@ -445,7 +445,7 @@ impl<T: BorrowMut<Transcript>> Verifier<T> {
             })
             .collect();
 
-        let r = self.transcript.borrow_mut().challenge_scalar(b"r");
+        let r = self.transcript.borrow_mut().clone().challenge_scalar(b"r");
 
         let xx = x * x;
         let rxx = r * xx;
