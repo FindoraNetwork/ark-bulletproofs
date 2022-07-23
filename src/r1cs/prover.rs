@@ -6,6 +6,7 @@ use ark_ff::{to_bytes, Field, PrimeField, UniformRand};
 use ark_std::{borrow::BorrowMut, mem, One, Zero};
 use clear_on_drop::clear::Clear;
 use merlin::Transcript;
+use rand_core::{CryptoRng, RngCore};
 
 use super::{
     ConstraintSystem, LinearCombination, R1CSProof, RandomizableConstraintSystem,
@@ -383,14 +384,19 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     }
 
     /// Consume this `ConstraintSystem` to produce a proof.
-    pub fn prove(self, bp_gens: &BulletproofGens) -> Result<R1CSProof, R1CSError> {
-        self.prove_and_return_transcript(bp_gens)
+    pub fn prove<R: CryptoRng + RngCore>(
+        self,
+        prng: &mut R,
+        bp_gens: &BulletproofGens,
+    ) -> Result<R1CSProof, R1CSError> {
+        self.prove_and_return_transcript(prng, bp_gens)
             .map(|(proof, _transcript)| proof)
     }
 
     /// Consume this `ConstraintSystem` to produce a proof. Returns the proof and the transcript passed in `Prover::new`.
-    pub fn prove_and_return_transcript(
+    pub fn prove_and_return_transcript<R: CryptoRng + RngCore>(
         mut self,
+        prng: &mut R,
         bp_gens: &BulletproofGens,
     ) -> Result<(R1CSProof, T), R1CSError> {
         use crate::util;
@@ -425,8 +431,7 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                 builder = builder.rekey_with_witness_bytes(b"v_blinding", &to_bytes!(v_b).unwrap());
             }
 
-            use rand::thread_rng;
-            builder.finalize(&mut thread_rng())
+            builder.finalize(prng)
         };
 
         // Commit to the first-phase low-level witness variables.

@@ -26,6 +26,7 @@ use bulletproofs_bs257::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
 struct ShuffleProof(R1CSProof);
@@ -77,7 +78,8 @@ impl ShuffleProof {
     /// Attempt to construct a proof that `output` is a permutation of `input`.
     ///
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
-    pub fn prove<'a, 'b>(
+    pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
+        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -92,23 +94,19 @@ impl ShuffleProof {
 
         let mut prover = Prover::new(&pc_gens, transcript);
 
-        // Construct blinding factors using an RNG.
-        // Note: a non-example implementation would want to operate on existing commitments.
-        let mut blinding_rng = rand::thread_rng();
-
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()
-            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(prng)))
             .unzip();
 
         let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
-            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(prng)))
             .unzip();
 
         ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
 
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(prng, &bp_gens)?;
 
         Ok((ShuffleProof(proof), input_commitments, output_commitments))
     }
@@ -116,8 +114,9 @@ impl ShuffleProof {
 
 impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
-    pub fn verify<'a, 'b>(
+    pub fn verify<'a, 'b, R: CryptoRng + RngCore>(
         &self,
+        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -144,7 +143,7 @@ impl ShuffleProof {
 
         ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
 
-        verifier.verify(&self.0, &pc_gens, &bp_gens)
+        verifier.verify(prng, &self.0, &pc_gens, &bp_gens)
     }
 }
 
@@ -173,8 +172,16 @@ fn bench_kshuffle_prove(c: &mut Criterion) {
             // Make kshuffle proof
             b.iter(|| {
                 let mut prover_transcript = Transcript::new(b"ShuffleBenchmark");
-                ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output)
-                    .unwrap();
+                let mut rng = rand::thread_rng();
+                ShuffleProof::prove(
+                    &mut rng,
+                    &pc_gens,
+                    &bp_gens,
+                    &mut prover_transcript,
+                    &input,
+                    &output,
+                )
+                .unwrap();
             })
         },
         (1..=LG_MAX_SHUFFLE_SIZE)
@@ -212,15 +219,24 @@ fn bench_kshuffle_verify(c: &mut Criterion) {
 
                 let mut prover_transcript = Transcript::new(b"ShuffleBenchmark");
 
-                ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output)
-                    .unwrap()
+                ShuffleProof::prove(
+                    &mut rng,
+                    &pc_gens,
+                    &bp_gens,
+                    &mut prover_transcript,
+                    &input,
+                    &output,
+                )
+                .unwrap()
             };
 
             // Verify kshuffle proof
             b.iter(|| {
                 let mut verifier_transcript = Transcript::new(b"ShuffleBenchmark");
+                let mut rng = rand::thread_rng();
                 proof
                     .verify(
+                        &mut rng,
                         &pc_gens,
                         &bp_gens,
                         &mut verifier_transcript,

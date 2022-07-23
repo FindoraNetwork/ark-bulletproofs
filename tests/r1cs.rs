@@ -10,6 +10,7 @@ use bulletproofs_bs257::{
     BulletproofGens, PedersenGens,
 };
 use merlin::Transcript;
+use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
 struct ShuffleProof(R1CSProof);
@@ -61,7 +62,8 @@ impl ShuffleProof {
     /// Attempt to construct a proof that `output` is a permutation of `input`.
     ///
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
-    pub fn prove<'a, 'b>(
+    pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
+        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -76,23 +78,19 @@ impl ShuffleProof {
 
         let mut prover = Prover::new(&pc_gens, transcript);
 
-        // Construct blinding factors using an RNG.
-        // Note: a non-example implementation would want to operate on existing commitments.
-        let mut blinding_rng = rand::thread_rng();
-
         let (input_commitments, input_vars): (Vec<_>, Vec<_>) = input
             .into_iter()
-            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(prng)))
             .unzip();
 
         let (output_commitments, output_vars): (Vec<_>, Vec<_>) = output
             .into_iter()
-            .map(|v| prover.commit(*v, Fr::rand(&mut blinding_rng)))
+            .map(|v| prover.commit(*v, Fr::rand(prng)))
             .unzip();
 
         ShuffleProof::gadget(&mut prover, input_vars, output_vars)?;
 
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(prng, &bp_gens)?;
 
         Ok((ShuffleProof(proof), input_commitments, output_commitments))
     }
@@ -100,8 +98,9 @@ impl ShuffleProof {
 
 impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
-    pub fn verify<'a, 'b>(
+    pub fn verify<'a, 'b, R: CryptoRng + RngCore>(
         &self,
+        prng: &mut R,
         pc_gens: &'b PedersenGens,
         bp_gens: &'b BulletproofGens,
         transcript: &'a mut Transcript,
@@ -128,7 +127,7 @@ impl ShuffleProof {
 
         ShuffleProof::gadget(&mut verifier, input_vars, output_vars)?;
 
-        verifier.verify(&self.0, &pc_gens, &bp_gens)?;
+        verifier.verify(prng, &self.0, &pc_gens, &bp_gens)?;
         Ok(())
     }
 }
@@ -149,13 +148,23 @@ fn kshuffle_helper(k: usize) {
         output.shuffle(&mut rand::thread_rng());
 
         let mut prover_transcript = Transcript::new(b"ShuffleProofTest");
-        ShuffleProof::prove(&pc_gens, &bp_gens, &mut prover_transcript, &input, &output).unwrap()
+        ShuffleProof::prove(
+            &mut rng,
+            &pc_gens,
+            &bp_gens,
+            &mut prover_transcript,
+            &input,
+            &output,
+        )
+        .unwrap()
     };
 
     {
         let mut verifier_transcript = Transcript::new(b"ShuffleProofTest");
+        let mut rng = rand::thread_rng();
         assert!(proof
             .verify(
+                &mut rng,
                 &pc_gens,
                 &bp_gens,
                 &mut verifier_transcript,
@@ -237,6 +246,7 @@ fn example_gadget_proof(
     c2: u64,
 ) -> Result<(R1CSProof, Vec<G1Affine>), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
+    let mut rng = thread_rng();
 
     // 1. Create a prover
     let mut prover = Prover::new(pc_gens, &mut transcript);
@@ -259,7 +269,7 @@ fn example_gadget_proof(
     );
 
     // 4. Make a proof
-    let proof = prover.prove(bp_gens)?;
+    let proof = prover.prove(&mut rng, bp_gens)?;
 
     Ok((proof, commitments))
 }
@@ -273,6 +283,7 @@ fn example_gadget_verify(
     commitments: Vec<G1Affine>,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
+    let mut rng = thread_rng();
 
     // 1. Create a verifier
     let mut verifier = Verifier::new(&mut transcript);
@@ -293,7 +304,7 @@ fn example_gadget_verify(
 
     // 4. Verify the proof
     verifier
-        .verify(&proof, &pc_gens, &bp_gens)
+        .verify(&mut rng, &proof, &pc_gens, &bp_gens)
         .map_err(|_| R1CSError::VerificationError)
 }
 
@@ -422,7 +433,7 @@ fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
         let (com, var) = prover.commit(v_val.into(), Fr::rand(&mut rng));
         assert!(range_proof(&mut prover, var.into(), Some(v_val), n).is_ok());
 
-        let proof = prover.prove(&bp_gens)?;
+        let proof = prover.prove(&mut rng, &bp_gens)?;
 
         (proof, com)
     };
@@ -437,7 +448,8 @@ fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
     assert!(range_proof(&mut verifier, var.into(), None, n).is_ok());
 
     // Verifier verifies proof
-    verifier.verify(&proof, &pc_gens, &bp_gens)
+    let mut rng = rand::thread_rng();
+    verifier.verify(&mut rng, &proof, &pc_gens, &bp_gens)
 }
 
 #[test]
@@ -491,7 +503,7 @@ fn batch_range_proof_helper(v_vals: &[(u64, usize)]) -> Result<(), R1CSError> {
             let (com, var) = prover.commit(Fr::from(*v), Fr::rand(&mut rng));
             assert!(range_proof(&mut prover, var.into(), Some(*v), *n).is_ok());
 
-            let proof = prover.prove(&bp_gens)?;
+            let proof = prover.prove(&mut rng, &bp_gens)?;
             (proof, com)
         };
         range_bound.push(*n);
