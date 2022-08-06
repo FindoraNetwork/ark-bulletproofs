@@ -1,16 +1,15 @@
-# Bulletproofs over the Canaan curve
+# Bulletproofs over the secq256k1 curve
 
 This repo builds over [Bulletproofs][bp_website] but replaces the 
-Ristretto group with another group over a newly sampled curve, named Canaan, 
-found through the use of the complex multiplication by  Broker and Stevenhagen.
+Ristretto group with another group over the secq256k1 curve.
 
-An important property of the Canaan curve is that it can embed secp256k1. A severe
+An important property of the secq256k1 curve is that it can embed secp256k1. A severe
 limitation, as a result, is that its scalar field does not have a lot of 
 2-arity, and therefore preventing a large class of protocols based on FFT
 to run on the native field.
 
 There are only a few solutions we know today to circumvent this limitation: 
-Bulletproofs and Gemini. For this library, we use Bulletproofs.
+Bulletproofs, Gemini, and Orion. For this library, we use Bulletproofs.
 
 ## Original About
 
