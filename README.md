@@ -10,7 +10,7 @@ limitation, as a result, is that its scalar field does not have a lot of
 to run on the native field.
 
 There are only a few solutions we know today to circumvent this limitation: 
-Bulletproofs, Gemini, and Orion. For this library, we use Bulletproofs.
+Bulletproofs and Gemini. For this library, we use Bulletproofs.
 
 ## Original About
 
