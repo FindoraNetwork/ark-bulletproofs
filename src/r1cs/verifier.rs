@@ -15,7 +15,7 @@ use super::{
     RandomizedConstraintSystem, Variable,
 };
 
-use crate::curve::canaan::{BigIntType, Fr, G1Affine};
+use crate::curve::secq256k1::{BigIntType, Fr, G1Affine};
 use crate::errors::R1CSError;
 use crate::generators::{BulletproofGens, PedersenGens};
 use crate::transcript::TranscriptProtocol;

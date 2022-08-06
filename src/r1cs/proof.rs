@@ -2,7 +2,7 @@
 //! Definition of the proof struct.
 
 use crate::{
-    curve::canaan::{Fr, G1Affine},
+    curve::secq256k1::{Fr, G1Affine},
     errors::R1CSError,
     inner_product_proof::InnerProductProof,
     ProofError,

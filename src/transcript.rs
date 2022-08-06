@@ -1,6 +1,6 @@
 //! Defines a `TranscriptProtocol` trait for using a Merlin transcript.
 
-use crate::curve::canaan::{Fr, G1Affine};
+use crate::curve::secq256k1::{Fr, G1Affine};
 use ark_ff::to_bytes;
 use ark_std::{rand::SeedableRng, UniformRand, Zero};
 use merlin::Transcript;

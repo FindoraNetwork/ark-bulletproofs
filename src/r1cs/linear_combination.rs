@@ -1,6 +1,6 @@
 //! Definition of linear combinations.
 
-use crate::curve::canaan::Fr;
+use crate::curve::secq256k1::Fr;
 use ark_std::{
     iter::FromIterator,
     ops::{Add, Mul, Neg, Sub},

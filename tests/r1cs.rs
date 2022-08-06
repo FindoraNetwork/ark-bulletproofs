@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
-use ark_bulletproofs_canaan::{
-    curve::canaan::{Fr, G1Affine},
+use ark_bulletproofs_secq256k1::{
+    curve::secq256k1::{Fr, G1Affine},
     r1cs::*,
     BulletproofGens, PedersenGens,
 };

@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 #![allow(non_snake_case)]
 
-use crate::curve::canaan::Fr;
+use crate::curve::secq256k1::Fr;
 use ark_std::{vec, vec::Vec, One, Zero};
 use clear_on_drop::clear::Clear;
 

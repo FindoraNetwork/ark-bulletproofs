@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use crate::curve::canaan::{BigIntType, Fr, G1Affine};
+use crate::curve::secq256k1::{BigIntType, Fr, G1Affine};
 use ark_ec::{msm, AffineCurve, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, PrimeField, UniformRand};
 use ark_std::{borrow::BorrowMut, mem, One, Zero};

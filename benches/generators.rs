@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use ark_bulletproofs_canaan::{BulletproofGens, PedersenGens};
+use ark_bulletproofs_secq256k1::{BulletproofGens, PedersenGens};
 
 #[macro_use]
 extern crate criterion;

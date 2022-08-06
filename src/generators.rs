@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use crate::curve::canaan::{Fr, G1Affine};
+use crate::curve::secq256k1::{Fr, G1Affine};
 use ark_ec::{AffineCurve, ProjectiveCurve};
 use ark_ff::{to_bytes, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
