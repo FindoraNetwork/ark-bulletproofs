@@ -7,14 +7,8 @@ use crate::{
     inner_product_proof::InnerProductProof,
     ProofError,
 };
-use ark_ff::{FromBytes, ToBytes};
-use ark_std::{
-    io::{Cursor, Read, Write},
-    Zero,
-};
-
-const ONE_PHASE_COMMITMENTS: u8 = 0;
-const TWO_PHASE_COMMITMENTS: u8 = 1;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_std::io::{Cursor, Read, Write};
 
 /// A proof of some statement specified by a
 /// [`ConstraintSystem`](::r1cs::ConstraintSystem).
@@ -32,7 +26,7 @@ const TWO_PHASE_COMMITMENTS: u8 = 1;
 /// the constraint system using
 /// [`VerifierCS::verify`](::r1cs::VerifierCS::verify) to verify the
 /// proof.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 #[allow(non_snake_case)]
 pub struct R1CSProof {
     /// Commitment to the values of input wires in the first phase.
@@ -83,23 +77,8 @@ impl R1CSProof {
     /// * two scalars \\(a, b\\).
     pub fn to_bytes(&self) -> Result<Vec<u8>, ProofError> {
         let mut cursor = Cursor::new(Vec::new());
-        self.write(&mut cursor)?;
+        self.serialize(&mut cursor)?;
         Ok(cursor.into_inner())
-    }
-
-    /// Returns the size in bytes required to serialize the `R1CSProof`.
-    pub fn serialized_size(&self) -> usize {
-        // version tag + (11 or 14) elements + the ipp
-        let elements = if self.missing_phase2_commitments() {
-            11
-        } else {
-            14
-        };
-        1 + elements * 32 + self.ipp_proof.serialized_size()
-    }
-
-    fn missing_phase2_commitments(&self) -> bool {
-        self.A_I2.is_zero() && self.A_O2.is_zero() && self.S2.is_zero()
     }
 
     /// Deserializes the proof from a byte slice.
@@ -107,122 +86,11 @@ impl R1CSProof {
     /// Returns an error if the byte slice cannot be parsed into a `R1CSProof`.
     pub fn from_bytes(slice: &[u8]) -> Result<R1CSProof, R1CSError> {
         let mut cursor = Cursor::new(slice);
-        let proof = R1CSProof::read(&mut cursor);
+        let proof = R1CSProof::deserialize(&mut cursor);
         if proof.is_ok() {
             Ok(proof.unwrap())
         } else {
             Err(R1CSError::FormatError)
-        }
-    }
-}
-
-impl ToBytes for R1CSProof {
-    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
-        if self.missing_phase2_commitments() {
-            ONE_PHASE_COMMITMENTS.write(&mut writer)?;
-            self.A_I1.write(&mut writer)?;
-            self.A_O1.write(&mut writer)?;
-            self.S1.write(&mut writer)?;
-        } else {
-            TWO_PHASE_COMMITMENTS.write(&mut writer)?;
-            self.A_I1.write(&mut writer)?;
-            self.A_O1.write(&mut writer)?;
-            self.S1.write(&mut writer)?;
-            self.A_I2.write(&mut writer)?;
-            self.A_O2.write(&mut writer)?;
-            self.S2.write(&mut writer)?;
-        }
-        self.T_1.write(&mut writer)?;
-        self.T_3.write(&mut writer)?;
-        self.T_4.write(&mut writer)?;
-        self.T_5.write(&mut writer)?;
-        self.T_6.write(&mut writer)?;
-        self.t_x.write(&mut writer)?;
-        self.t_x_blinding.write(&mut writer)?;
-        self.e_blinding.write(&mut writer)?;
-        self.ipp_proof.write(&mut writer)
-    }
-}
-
-impl FromBytes for R1CSProof {
-    fn read<R: Read>(mut reader: R) -> ark_std::io::Result<Self> {
-        let missing_phases2_commitments = {
-            let flag = u8::read(&mut reader)?;
-            flag == ONE_PHASE_COMMITMENTS
-        };
-
-        if missing_phases2_commitments {
-            let A_I1 = G1Affine::read(&mut reader)?;
-            let A_O1 = G1Affine::read(&mut reader)?;
-            let S1 = G1Affine::read(&mut reader)?;
-
-            let T_1 = G1Affine::read(&mut reader)?;
-            let T_3 = G1Affine::read(&mut reader)?;
-            let T_4 = G1Affine::read(&mut reader)?;
-            let T_5 = G1Affine::read(&mut reader)?;
-            let T_6 = G1Affine::read(&mut reader)?;
-
-            let t_x = Fr::read(&mut reader)?;
-            let t_x_blinding = Fr::read(&mut reader)?;
-            let e_blinding = Fr::read(&mut reader)?;
-
-            let ipp_proof = InnerProductProof::read(&mut reader)?;
-
-            Ok(Self {
-                A_I1,
-                A_O1,
-                S1,
-                A_I2: G1Affine::zero(),
-                A_O2: G1Affine::zero(),
-                S2: G1Affine::zero(),
-                T_1,
-                T_3,
-                T_4,
-                T_5,
-                T_6,
-                t_x,
-                t_x_blinding,
-                e_blinding,
-                ipp_proof,
-            })
-        } else {
-            let A_I1 = G1Affine::read(&mut reader)?;
-            let A_O1 = G1Affine::read(&mut reader)?;
-            let S1 = G1Affine::read(&mut reader)?;
-
-            let A_I2 = G1Affine::read(&mut reader)?;
-            let A_O2 = G1Affine::read(&mut reader)?;
-            let S2 = G1Affine::read(&mut reader)?;
-
-            let T_1 = G1Affine::read(&mut reader)?;
-            let T_3 = G1Affine::read(&mut reader)?;
-            let T_4 = G1Affine::read(&mut reader)?;
-            let T_5 = G1Affine::read(&mut reader)?;
-            let T_6 = G1Affine::read(&mut reader)?;
-
-            let t_x = Fr::read(&mut reader)?;
-            let t_x_blinding = Fr::read(&mut reader)?;
-            let e_blinding = Fr::read(&mut reader)?;
-
-            let ipp_proof = InnerProductProof::read(&mut reader)?;
-
-            Ok(Self {
-                A_I1,
-                A_O1,
-                S1,
-                A_I2,
-                A_O2,
-                S2,
-                T_1,
-                T_3,
-                T_4,
-                T_5,
-                T_6,
-                t_x,
-                t_x_blinding,
-                e_blinding,
-                ipp_proof,
-            })
         }
     }
 }
