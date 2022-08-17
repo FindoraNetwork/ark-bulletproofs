@@ -2,7 +2,8 @@
 
 use crate::curve::secq256k1::{BigIntType, Fr, G1Affine};
 use ark_ec::{msm, ProjectiveCurve};
-use ark_ff::{batch_inversion, Field, FromBytes, One, PrimeField, ToBytes, Zero};
+use ark_ff::{batch_inversion, Field, One, PrimeField, Zero};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::{
     borrow::Borrow,
     io::{Read, Write},
@@ -15,7 +16,7 @@ use merlin::Transcript;
 use crate::errors::ProofError;
 use crate::transcript::TranscriptProtocol;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct InnerProductProof {
     pub(crate) L_vec: Vec<G1Affine>,
     pub(crate) R_vec: Vec<G1Affine>,
@@ -379,48 +380,6 @@ impl InnerProductProof {
             Err(ProofError::VerificationError)
         }
     }
-
-    /// Returns the size in bytes required to serialize the inner
-    /// product proof.
-    ///
-    /// For vectors of length `n` the proof size is
-    /// \\(32 \cdot (2\lg n+2)\\) bytes.
-    pub fn serialized_size(&self) -> usize {
-        (self.L_vec.len() * 2 + 2) * 32
-    }
-}
-
-impl ToBytes for InnerProductProof {
-    fn write<W: Write>(&self, mut writer: W) -> ark_std::io::Result<()> {
-        let len = self.L_vec.len();
-        u64::write(&(len as u64), &mut writer)?;
-
-        for (l, r) in self.L_vec.iter().zip(self.R_vec.iter()) {
-            l.write(&mut writer)?;
-            r.write(&mut writer)?;
-        }
-        self.a.write(&mut writer)?;
-        self.b.write(&mut writer)
-    }
-}
-
-impl FromBytes for InnerProductProof {
-    fn read<R: Read>(mut reader: R) -> ark_std::io::Result<Self> {
-        let len: usize = u64::read(&mut reader)? as usize;
-
-        let mut L_vec: Vec<G1Affine> = Vec::with_capacity(len);
-        let mut R_vec: Vec<G1Affine> = Vec::with_capacity(len);
-
-        for _ in 0..len {
-            L_vec.push(G1Affine::read(&mut reader)?);
-            R_vec.push(G1Affine::read(&mut reader)?);
-        }
-
-        let a = Fr::read(&mut reader)?;
-        let b = Fr::read(&mut reader)?;
-
-        Ok(Self { L_vec, R_vec, a, b })
-    }
 }
 
 /// Computes an inner product of two vectors
@@ -442,7 +401,6 @@ pub fn inner_product(a: &[Fr], b: &[Fr]) -> Fr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::to_bytes;
     use ark_std::{io::Cursor, rand::SeedableRng, One, UniformRand};
 
     use crate::util;
@@ -532,9 +490,13 @@ mod tests {
             )
             .is_ok());
 
-        let bytes = to_bytes!(proof).unwrap();
+        let bytes = {
+            let mut cursor = Cursor::new(Vec::<u8>::new());
+            proof.serialize(&mut cursor).unwrap();
+            cursor.into_inner()
+        };
         let mut cursor = Cursor::new(bytes);
-        let proof = InnerProductProof::read(&mut cursor).unwrap();
+        let proof = InnerProductProof::deserialize(&mut cursor).unwrap();
 
         let mut verifier = Transcript::new(b"innerproducttest");
         assert!(proof
