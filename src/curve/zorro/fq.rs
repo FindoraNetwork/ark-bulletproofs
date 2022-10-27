@@ -1,7 +1,7 @@
 use ark_ff::{
     biginteger::{BigInt, BigInteger320},
     fields::{Fp320, Fp320Parameters, FpParameters},
-    FftParameters, 
+    FftParameters,
 };
 
 pub type Fq = Fp320<FqParameters>;
@@ -13,12 +13,14 @@ impl Fp320Parameters for FqParameters {}
 impl FftParameters for FqParameters {
     type BigInt = BigInteger320;
     const TWO_ADICITY: u32 = 1;
-    const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([  
-        0x0,
-        0x51bf8b26ea50fecb,
+
+    #[rustfmt::skip]
+    const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([
+        0x0, 
+        0x51bf8b26ea50fecb, 
         0x36890df020c720aa,
-        0x1,
-        0x0,
+        0x1, 
+        0x0
     ]);
 }
 
@@ -34,11 +36,11 @@ impl FpParameters for FqParameters {
         0x1,
     ]);
 
-    const MODULUS_BITS: u32 = 257;   
+    const MODULUS_BITS: u32 = 257;
 
     const CAPACITY: u32 = Self::MODULUS_BITS - 1;
 
-    const REPR_SHAVE_BITS: u32 = 63; 
+    const REPR_SHAVE_BITS: u32 = 63;
 
     /// Let `M` be the power of 2^64 nearest to `Self::MODULUS_BITS`. Then
     /// `R = M % Self::MODULUS`.
@@ -119,7 +121,6 @@ impl FpParameters for FqParameters {
     ]);
 }
 
-
 #[cfg(test)]
 mod test {
     use crate::curve::zorro::fq::Fq;
@@ -131,7 +132,7 @@ mod test {
     };
 
     pub(crate) const ITERATIONS: usize = 5;
-  
+
     #[test]
     fn test_fq() {
         let mut rng = ark_std::test_rng();

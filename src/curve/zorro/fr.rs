@@ -226,7 +226,7 @@ mod test {
     #[test]
     fn test_fr_squaring() {
         let mut rng = test_rng();
-        
+
         for _ in 0..1000 {
             // Ensure that (a * a) = a^2
             let a = Fr::rand(&mut rng);
@@ -316,9 +316,3 @@ mod test {
         }
     }
 }
-
-
-
-
-
-
