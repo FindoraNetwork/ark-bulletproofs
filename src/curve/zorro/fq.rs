@@ -74,10 +74,10 @@ impl FpParameters for FqParameters {
     /// `2 * R % q = 115792089237316195408342374827511021241723974127304275876964407397669405785803`
     #[rustfmt::skip]
     const GENERATOR: BigInteger320 = BigInt::new([
-        0x2,
-        0x0,
-        0x0,
-        0x0,
+        0x51bf8b26ea50fecb,
+        0x9309f7a24c252314,
+        0x92ede41fbe71beac,
+        0xfffffffffffffffd,
         0x0,
     ]);
 
