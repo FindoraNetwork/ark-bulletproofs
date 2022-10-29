@@ -4,124 +4,126 @@ use ark_ff::{
     FftParameters,
 };
 
-pub type Fr = Fp320<FrParameters>;
+pub type Fq = Fp320<FqParameters>;
 
-pub struct FrParameters;
+pub struct FqParameters;
 
-impl Fp320Parameters for FrParameters {}
+impl Fp320Parameters for FqParameters {}
 
-impl FftParameters for FrParameters {
+impl FftParameters for FqParameters {
     type BigInt = BigInteger320;
-    const TWO_ADICITY: u32 = 6;
+    const TWO_ADICITY: u32 = 1;
+
+    #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([
-        0x0112cb0f605a214a,
-        0x92225daffb794500,
-        0x7e42003a6ccb6212,
-        0x55980b07bc222114,
-        0x0,
+        0x0, 
+        0x51bf8b26ea50fecb, 
+        0x36890df020c720aa,
+        0x1, 
+        0x0
     ]);
 }
 
-impl FpParameters for FrParameters {
-    /// MODULUS = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
-    ///         = 115792089237316195423570985008687907852837564279074904382605163141518161494337
+impl FpParameters for FqParameters {
+    /// MODULUS = 0x10000000000000000000000000000000136890df020c720aa51bf8b26ea50fecb
+    ///         = 115792089237316195423570985008687907853682756971699735333147980285963064639179
     #[rustfmt::skip]
     const MODULUS: BigInteger320 = BigInt::new([
-        0xbfd25e8cd0364141,
-        0xbaaedce6af48a03b,
-        0xfffffffffffffffe,
-        0xffffffffffffffff,
+        0x51bf8b26ea50fecb,
+        0x36890df020c720aa,
+        0x1,
         0x0,
+        0x1,
     ]);
 
-    const MODULUS_BITS: u32 = 256;
+    const MODULUS_BITS: u32 = 257;
 
     const CAPACITY: u32 = Self::MODULUS_BITS - 1;
 
-    const REPR_SHAVE_BITS: u32 = 64;
+    const REPR_SHAVE_BITS: u32 = 63;
 
     /// Let `M` be the power of 2^64 nearest to `Self::MODULUS_BITS`. Then
     /// `R = M % Self::MODULUS`.
     ///
     /// `M = 2^{320}`.
-    /// `R = 7976748203231275684456616952498544216114824026705293737984`.
+    /// `R = 115792089237316195415956679918099464547703365549502005605056193841816235212491`.
     #[rustfmt::skip]
     const R: BigInteger320 = BigInt::new([
-        0x0,
-        0x402da1732fc9bebf,
-        0x4551231950b75fc4,
-        0x1,
+        0x51bf8b26ea50fecb,
+        0xe4c982c9367621df,
+        0xc976f20fdf38df56,
+        0xfffffffffffffffe,
         0x0,
     ]);
 
     /// `R2 = R^2 % Self::MODULUS`.
-    /// `R2 = 27185382341430777127667013160941942500583767731514336557959633868809832333177`.
+    /// `R2 = 87952144448814991120222238096332847185353731516343235297673570405716810602274`.
     #[rustfmt::skip]
     const R2: BigInteger320 = BigInt::new([
-        0x1e004f504dfd7f79,
-        0x08fcf59774a052ea,
-        0x27c4120fc94e1653,
-        0x3c1a6191e5702644,
-        0x0
+        0xe9888ad928dd1722,
+        0x480ea40f640555f2,
+        0x191fdd0a884fadd3,
+        0xc273264f8e930969,
+        0x0,
     ]);
 
     /// `INV = -MODULUS^{-1} mod 2^64`.
-    /// `INV = 5408259542528602431`.
-    const INV: u64 = 0x4b0dff665588b13f;
+    /// `INV = 1856915940073670941`.
+    const INV: u64 = 0x19c5173589da091d;
 
-    /// GENERATOR = 7
+    /// GENERATOR = 2
     /// Encoded in Montgomery form, so the value here is
-    /// `7 * R % q = 55837237422618929791196318667489809512803768186937056165888`
+    /// `2 * R % q = 115792089237316195408342374827511021241723974127304275876964407397669405785803`
     #[rustfmt::skip]
     const GENERATOR: BigInteger320 = BigInt::new([
-        0x0,
-        0xc13f6a264e843739,
-        0xe537f5b135039e5d,
-        0x8,
+        0x51bf8b26ea50fecb,
+        0x9309f7a24c252314,
+        0x92ede41fbe71beac,
+        0xfffffffffffffffd,
         0x0,
     ]);
 
     #[rustfmt::skip]
-    /// `57896044618658097711785492504343953926634992332820282019728792003954417335831`
+    /// `57896044618658097711785492504343953926841378485849867666573990142981532319589`
     const MODULUS_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0xdfe92f46681b20a0,
-        0x5d576e7357a4501d,
-        0xffffffffffffffff,
-        0x7fffffffffffffff,
-        0x0
+        0x28dfc59375287f65,
+        0x9b4486f810639055,
+        0x0,
+        0x8000000000000000,
+        0x0,
     ]);
 
     /// T and T_MINUS_ONE_DIV_TWO, where `MODULUS - 1 = 2^S * T`
     /// For T coprime to 2
     ///
-    /// In our case, `S = 6`.
+    /// In our case, `S = 1`.
     ///
     /// `T = (MODULUS - 1) / 2^S =`
-    /// `1809251394333065553493296640760748560200586941860545380978205674086221273349`
+    /// `57896044618658097711785492504343953926841378485849867666573990142981532319589`
     #[rustfmt::skip]
     const T: BigInteger320 = BigInt::new([
-        0xeeff497a3340d905,
-        0xfaeabb739abd2280,
-        0xffffffffffffffff,
-        0x03ffffffffffffff,
-        0x0
+        0x28dfc59375287f65,
+        0x9b4486f810639055,
+        0x0,
+        0x8000000000000000,
+        0x0,
     ]);
 
     /// `(T - 1) / 2 =`
-    /// `904625697166532776746648320380374280100293470930272690489102837043110636674`
+    /// `28948022309329048855892746252171976963420689242924933833286995071490766159794`
     #[rustfmt::skip]
     const T_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0x777fa4bd19a06c82,
-        0xfd755db9cd5e9140,
-        0xffffffffffffffff,
-        0x01ffffffffffffff,
-        0x0
+        0x946fe2c9ba943fb2,
+        0x4da2437c0831c82a,
+        0x0,
+        0x4000000000000000,
+        0x0,
     ]);
 }
 
 #[cfg(test)]
 mod test {
-    use crate::curve::secp256k1::fr::Fr;
+    use crate::curve::zorro::fq::Fq;
     use ark_algebra_test_templates::fields::{field_test, primefield_test};
     use ark_ff::{Field, One, UniformRand, Zero};
     use ark_std::{
@@ -132,27 +134,25 @@ mod test {
     pub(crate) const ITERATIONS: usize = 5;
 
     #[test]
-    fn test_fr() {
+    fn test_fq() {
         let mut rng = ark_std::test_rng();
         for _ in 0..ITERATIONS {
-            let a: Fr = UniformRand::rand(&mut rng);
-            let b: Fr = UniformRand::rand(&mut rng);
+            let a: Fq = UniformRand::rand(&mut rng);
+            let b: Fq = UniformRand::rand(&mut rng);
             field_test(a, b);
-            primefield_test::<Fr>();
+            primefield_test::<Fq>();
         }
     }
 
     #[test]
-    fn test_fr_add_assign() {
-        // Test associativity
-
+    fn test_fq_add_assign() {
         let mut rng = test_rng();
 
         for _ in 0..1000 {
             // Generate a, b, c and ensure (a + b) + c == a + (b + c).
-            let a = Fr::rand(&mut rng);
-            let b = Fr::rand(&mut rng);
-            let c = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
+            let b = Fq::rand(&mut rng);
+            let c = Fq::rand(&mut rng);
 
             let mut tmp1 = a;
             tmp1.add_assign(&b);
@@ -167,13 +167,13 @@ mod test {
     }
 
     #[test]
-    fn test_fr_sub_assign() {
+    fn test_fq_sub_assign() {
         let mut rng = test_rng();
 
         for _ in 0..1000 {
             // Ensure that (a - b) + (b - a) = 0.
-            let a = Fr::rand(&mut rng);
-            let b = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
+            let b = Fq::rand(&mut rng);
 
             let mut tmp1 = a;
             tmp1.sub_assign(&b);
@@ -187,14 +187,14 @@ mod test {
     }
 
     #[test]
-    fn test_fr_mul_assign() {
+    fn test_fq_mul_assign() {
         let mut rng = test_rng();
 
         for _ in 0..1000 {
             // Ensure that (a * b) * c = a * (b * c)
-            let a = Fr::rand(&mut rng);
-            let b = Fr::rand(&mut rng);
-            let c = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
+            let b = Fq::rand(&mut rng);
+            let c = Fq::rand(&mut rng);
 
             let mut tmp1 = a;
             tmp1.mul_assign(&b);
@@ -210,10 +210,10 @@ mod test {
         for _ in 0..1000 {
             // Ensure that r * (a + b + c) = r*a + r*b + r*c
 
-            let r = Fr::rand(&mut rng);
-            let mut a = Fr::rand(&mut rng);
-            let mut b = Fr::rand(&mut rng);
-            let mut c = Fr::rand(&mut rng);
+            let r = Fq::rand(&mut rng);
+            let mut a = Fq::rand(&mut rng);
+            let mut b = Fq::rand(&mut rng);
+            let mut c = Fq::rand(&mut rng);
 
             let mut tmp1 = a;
             tmp1.add_assign(&b);
@@ -232,12 +232,12 @@ mod test {
     }
 
     #[test]
-    fn test_fr_squaring() {
+    fn test_fq_squaring() {
         let mut rng = test_rng();
 
         for _ in 0..1000 {
             // Ensure that (a * a) = a^2
-            let a = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
 
             let mut tmp = a;
             tmp.square_in_place();
@@ -250,16 +250,16 @@ mod test {
     }
 
     #[test]
-    fn test_fr_inverse() {
-        assert!(Fr::zero().inverse().is_none());
+    fn test_fq_inverse() {
+        assert!(Fq::zero().inverse().is_none());
 
         let mut rng = test_rng();
 
-        let one = Fr::one();
+        let one = Fq::one();
 
         for _ in 0..1000 {
             // Ensure that a * a^-1 = 1
-            let mut a = Fr::rand(&mut rng);
+            let mut a = Fq::rand(&mut rng);
             let ainv = a.inverse().unwrap();
             a.mul_assign(&ainv);
             assert_eq!(a, one);
@@ -267,12 +267,12 @@ mod test {
     }
 
     #[test]
-    fn test_fr_double_in_place() {
+    fn test_fq_double_in_place() {
         let mut rng = test_rng();
 
         for _ in 0..1000 {
             // Ensure doubling a is equivalent to adding a to itself.
-            let mut a = Fr::rand(&mut rng);
+            let mut a = Fq::rand(&mut rng);
             let mut b = a;
             b.add_assign(&a);
             a.double_in_place();
@@ -281,9 +281,9 @@ mod test {
     }
 
     #[test]
-    fn test_fr_negate() {
+    fn test_fq_negate() {
         {
-            let a = -Fr::zero();
+            let a = -Fq::zero();
 
             assert!(a.is_zero());
         }
@@ -292,7 +292,7 @@ mod test {
 
         for _ in 0..1000 {
             // Ensure (a - (-a)) = 0.
-            let mut a = Fr::rand(&mut rng);
+            let mut a = Fq::rand(&mut rng);
             let b = -a;
             a.add_assign(&b);
 
@@ -301,15 +301,15 @@ mod test {
     }
 
     #[test]
-    fn test_fr_pow() {
+    fn test_fq_pow() {
         let mut rng = test_rng();
 
         for i in 0..1000 {
             // Exponentiate by various small numbers and ensure it consists with repeated
             // multiplication.
-            let a = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
             let target = a.pow(&[i]);
-            let mut c = Fr::one();
+            let mut c = Fq::one();
             for _ in 0..i {
                 c.mul_assign(&a);
             }
@@ -318,9 +318,9 @@ mod test {
 
         for _ in 0..1000 {
             // Exponentiating by the modulus should have no effect in a prime field.
-            let a = Fr::rand(&mut rng);
+            let a = Fq::rand(&mut rng);
 
-            assert_eq!(a, a.pow(Fr::characteristic()));
+            assert_eq!(a, a.pow(Fq::characteristic()));
         }
     }
 }

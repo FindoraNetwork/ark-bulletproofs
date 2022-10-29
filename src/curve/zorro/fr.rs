@@ -1,127 +1,119 @@
 use ark_ff::{
-    biginteger::{BigInt, BigInteger320},
-    fields::{Fp320, Fp320Parameters, FpParameters},
+    biginteger::{BigInt, BigInteger256},
+    fields::{Fp256, Fp256Parameters, FpParameters},
     FftParameters,
 };
 
-pub type Fr = Fp320<FrParameters>;
+pub type Fr = Fp256<FrParameters>;
 
 pub struct FrParameters;
 
-impl Fp320Parameters for FrParameters {}
+impl Fp256Parameters for FrParameters {}
 
 impl FftParameters for FrParameters {
-    type BigInt = BigInteger320;
-    const TWO_ADICITY: u32 = 6;
+    type BigInt = BigInteger256;
+    const TWO_ADICITY: u32 = 2;
     const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([
-        0x0112cb0f605a214a,
-        0x92225daffb794500,
-        0x7e42003a6ccb6212,
-        0x55980b07bc222114,
-        0x0,
+        0x3b5807d4fe2bdb04,
+        0x3f590fdb51be9ed,
+        0x6d6e16bf336202d1,
+        0x75776b0bd6c71ba8,
     ]);
 }
 
 impl FpParameters for FrParameters {
-    /// MODULUS = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
-    ///         = 115792089237316195423570985008687907852837564279074904382605163141518161494337
+    /// MODULUS = 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed
+    ///         = 57896044618658097711785492504343953926634992332820282019728792003956564819949
     #[rustfmt::skip]
-    const MODULUS: BigInteger320 = BigInt::new([
-        0xbfd25e8cd0364141,
-        0xbaaedce6af48a03b,
-        0xfffffffffffffffe,
+    const MODULUS: BigInteger256 = BigInt::new([
+        0xffffffffffffffed,
         0xffffffffffffffff,
-        0x0,
+        0xffffffffffffffff,
+        0x7fffffffffffffff,
     ]);
 
-    const MODULUS_BITS: u32 = 256;
+    const MODULUS_BITS: u32 = 255;
 
     const CAPACITY: u32 = Self::MODULUS_BITS - 1;
 
-    const REPR_SHAVE_BITS: u32 = 64;
+    const REPR_SHAVE_BITS: u32 = 0;
 
     /// Let `M` be the power of 2^64 nearest to `Self::MODULUS_BITS`. Then
     /// `R = M % Self::MODULUS`.
     ///
-    /// `M = 2^{320}`.
-    /// `R = 7976748203231275684456616952498544216114824026705293737984`.
+    /// `M = 2^{256}`.
+    /// `R = 38`.
     #[rustfmt::skip]
-    const R: BigInteger320 = BigInt::new([
+    const R: BigInteger256 = BigInt::new([
+        0x26,
         0x0,
-        0x402da1732fc9bebf,
-        0x4551231950b75fc4,
-        0x1,
+        0x0,
         0x0,
     ]);
 
     /// `R2 = R^2 % Self::MODULUS`.
-    /// `R2 = 27185382341430777127667013160941942500583767731514336557959633868809832333177`.
+    /// `R2 = 1444`.
     #[rustfmt::skip]
-    const R2: BigInteger320 = BigInt::new([
-        0x1e004f504dfd7f79,
-        0x08fcf59774a052ea,
-        0x27c4120fc94e1653,
-        0x3c1a6191e5702644,
+    const R2: BigInteger256 = BigInt::new([
+        0x5a4,
+        0x0,
+        0x0,
         0x0
     ]);
 
     /// `INV = -MODULUS^{-1} mod 2^64`.
-    /// `INV = 5408259542528602431`.
-    const INV: u64 = 0x4b0dff665588b13f;
+    /// `INV = 9708812670373448219`.
+    const INV: u64 = 0x86bca1af286bca1b;
 
-    /// GENERATOR = 7
+    /// GENERATOR = 2
     /// Encoded in Montgomery form, so the value here is
-    /// `7 * R % q = 55837237422618929791196318667489809512803768186937056165888`
+    /// `2 * R % q = 76`
     #[rustfmt::skip]
-    const GENERATOR: BigInteger320 = BigInt::new([
+    const GENERATOR: BigInteger256 = BigInt::new([
+        0x4c,
         0x0,
-        0xc13f6a264e843739,
-        0xe537f5b135039e5d,
-        0x8,
+        0x0,
         0x0,
     ]);
 
     #[rustfmt::skip]
-    /// `57896044618658097711785492504343953926634992332820282019728792003954417335831`
-    const MODULUS_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0xdfe92f46681b20a0,
-        0x5d576e7357a4501d,
+    /// `28948022309329048855892746252171976963317496166410141009864396001978282409974`
+    const MODULUS_MINUS_ONE_DIV_TWO: BigInteger256 = BigInt::new([
+        0xfffffffffffffff6,
         0xffffffffffffffff,
-        0x7fffffffffffffff,
-        0x0
+        0xffffffffffffffff,
+        0x3fffffffffffffff,
     ]);
 
     /// T and T_MINUS_ONE_DIV_TWO, where `MODULUS - 1 = 2^S * T`
     /// For T coprime to 2
     ///
-    /// In our case, `S = 6`.
+    /// In our case, `S = 2`.
     ///
     /// `T = (MODULUS - 1) / 2^S =`
-    /// `1809251394333065553493296640760748560200586941860545380978205674086221273349`
+    /// `14474011154664524427946373126085988481658748083205070504932198000989141204987`
     #[rustfmt::skip]
-    const T: BigInteger320 = BigInt::new([
-        0xeeff497a3340d905,
-        0xfaeabb739abd2280,
+    const T: BigInteger256 = BigInt::new([
+        0xfffffffffffffffb,
         0xffffffffffffffff,
-        0x03ffffffffffffff,
-        0x0
+        0xffffffffffffffff,
+        0x1fffffffffffffff,
     ]);
 
     /// `(T - 1) / 2 =`
-    /// `904625697166532776746648320380374280100293470930272690489102837043110636674`
+    /// `7237005577332262213973186563042994240829374041602535252466099000494570602493`
     #[rustfmt::skip]
-    const T_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0x777fa4bd19a06c82,
-        0xfd755db9cd5e9140,
+    const T_MINUS_ONE_DIV_TWO: BigInteger256 = BigInt::new([
+        0xfffffffffffffffd,
         0xffffffffffffffff,
-        0x01ffffffffffffff,
-        0x0
+        0xffffffffffffffff,
+        0xfffffffffffffff,
     ]);
 }
 
 #[cfg(test)]
 mod test {
-    use crate::curve::secp256k1::fr::Fr;
+    use crate::curve::zorro::fr::Fr;
     use ark_algebra_test_templates::fields::{field_test, primefield_test};
     use ark_ff::{Field, One, UniformRand, Zero};
     use ark_std::{
