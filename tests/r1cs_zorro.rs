@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
-use ark_bulletproofs_secq256k1::{
-    curve::secq256k1::{Fr, G1Affine},
+use ark_bulletproofs::{
+    curve::zorro::{Fr, G1Affine},
     r1cs::*,
     BulletproofGens, PedersenGens,
 };
@@ -13,13 +13,13 @@ use merlin::Transcript;
 use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
-struct ShuffleProof(R1CSProof);
+struct ShuffleProof(R1CSProof<G1Affine>);
 
 impl ShuffleProof {
-    fn gadget<CS: RandomizableConstraintSystem>(
+    fn gadget<CS: RandomizableConstraintSystem<Fr>>(
         cs: &mut CS,
-        x: Vec<Variable>,
-        y: Vec<Variable>,
+        x: Vec<Variable<Fr>>,
+        y: Vec<Variable<Fr>>,
     ) -> Result<(), R1CSError> {
         assert_eq!(x.len(), y.len());
         let k = x.len();
@@ -64,8 +64,8 @@ impl ShuffleProof {
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
     pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
         prng: &mut R,
-        pc_gens: &'b PedersenGens,
-        bp_gens: &'b BulletproofGens,
+        pc_gens: &'b PedersenGens<G1Affine>,
+        bp_gens: &'b BulletproofGens<G1Affine>,
         transcript: &'a mut Transcript,
         input: &[Fr],
         output: &[Fr],
@@ -100,8 +100,8 @@ impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
     pub fn verify<'a, 'b>(
         &self,
-        pc_gens: &'b PedersenGens,
-        bp_gens: &'b BulletproofGens,
+        pc_gens: &'b PedersenGens<G1Affine>,
+        bp_gens: &'b BulletproofGens<G1Affine>,
         transcript: &'a mut Transcript,
         input_commitments: &Vec<G1Affine>,
         output_commitments: &Vec<G1Affine>,
@@ -218,14 +218,14 @@ fn shuffle_gadget_test_42() {
 }
 
 /// Constrains (a1 + a2) * (b1 + b2) = (c1 + c2)
-fn example_gadget<CS: ConstraintSystem>(
+fn example_gadget<CS: ConstraintSystem<Fr>>(
     cs: &mut CS,
-    a1: LinearCombination,
-    a2: LinearCombination,
-    b1: LinearCombination,
-    b2: LinearCombination,
-    c1: LinearCombination,
-    c2: LinearCombination,
+    a1: LinearCombination<Fr>,
+    a2: LinearCombination<Fr>,
+    b1: LinearCombination<Fr>,
+    b2: LinearCombination<Fr>,
+    c1: LinearCombination<Fr>,
+    c2: LinearCombination<Fr>,
 ) {
     let (_, _, c_var) = cs.multiply(a1 + a2, b1 + b2);
     cs.constrain(c1 + c2 - c_var);
@@ -233,15 +233,15 @@ fn example_gadget<CS: ConstraintSystem>(
 
 // Prover's scope
 fn example_gadget_proof(
-    pc_gens: &PedersenGens,
-    bp_gens: &BulletproofGens,
+    pc_gens: &PedersenGens<G1Affine>,
+    bp_gens: &BulletproofGens<G1Affine>,
     a1: u64,
     a2: u64,
     b1: u64,
     b2: u64,
     c1: u64,
     c2: u64,
-) -> Result<(R1CSProof, Vec<G1Affine>), R1CSError> {
+) -> Result<(R1CSProof<G1Affine>, Vec<G1Affine>), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
     let mut rng = thread_rng();
 
@@ -273,10 +273,10 @@ fn example_gadget_proof(
 
 // Verifier logic
 fn example_gadget_verify(
-    pc_gens: &PedersenGens,
-    bp_gens: &BulletproofGens,
+    pc_gens: &PedersenGens<G1Affine>,
+    bp_gens: &BulletproofGens<G1Affine>,
     c2: u64,
-    proof: R1CSProof,
+    proof: R1CSProof<G1Affine>,
     commitments: Vec<G1Affine>,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
@@ -361,9 +361,9 @@ fn example_gadget_serialization_test() {
 // Range Proof gadget
 
 /// Enforces that the quantity of v is in the range [0, 2^n).
-pub fn range_proof<CS: ConstraintSystem>(
+pub fn range_proof<CS: ConstraintSystem<Fr>>(
     cs: &mut CS,
-    mut v: LinearCombination,
+    mut v: LinearCombination<Fr>,
     v_assignment: Option<u64>,
     n: usize,
 ) -> Result<(), R1CSError> {
@@ -379,7 +379,7 @@ pub fn range_proof<CS: ConstraintSystem>(
         cs.constrain(o.into());
 
         // Enforce that a = 1 - b, so they both are 1 or 0.
-        cs.constrain(a + (b - 1u64));
+        cs.constrain(a + b - LinearCombination::from(Fr::one()));
 
         // Add `-b_i*2^i` to the linear combination
         // in order to form the following constraint by the end of the loop:
@@ -415,7 +415,7 @@ fn range_proof_gadget() {
 
 fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
     // Common
-    let pc_gens = PedersenGens::default();
+    let pc_gens = PedersenGens::<G1Affine>::default();
     let bp_gens = BulletproofGens::new(128, 1);
 
     // Prover's scope
@@ -479,7 +479,7 @@ fn batch_range_proof_gadget() {
 
 fn batch_range_proof_helper(v_vals: &[(u64, usize)]) -> Result<(), R1CSError> {
     // Common
-    let pc_gens = PedersenGens::default();
+    let pc_gens = PedersenGens::<G1Affine>::default();
     let bp_gens = BulletproofGens::new(128, 1);
 
     let mut proofs = vec![];

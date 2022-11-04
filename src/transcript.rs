@@ -1,14 +1,14 @@
 //! Defines a `TranscriptProtocol` trait for using a Merlin transcript.
 
-use crate::curve::secq256k1::{Fr, G1Affine};
+use ark_ec::AffineCurve;
 use ark_ff::to_bytes;
-use ark_std::{rand::SeedableRng, UniformRand, Zero};
+use ark_std::{rand::SeedableRng, UniformRand};
 use merlin::Transcript;
 use rand_chacha::ChaChaRng;
 
 use crate::errors::ProofError;
 
-pub trait TranscriptProtocol {
+pub trait TranscriptProtocol<G: AffineCurve> {
     /// Append a domain separator for an `n`-bit, `m`-party range proof.
     fn rangeproof_domain_sep(&mut self, n: u64, m: u64);
 
@@ -25,24 +25,24 @@ pub trait TranscriptProtocol {
     fn r1cs_2phase_domain_sep(&mut self);
 
     /// Append a `scalar` with the given `label`.
-    fn append_scalar(&mut self, label: &'static [u8], scalar: &Fr);
+    fn append_scalar(&mut self, label: &'static [u8], scalar: &G::ScalarField);
 
     /// Append a `point` with the given `label`.
-    fn append_point(&mut self, label: &'static [u8], point: &G1Affine);
+    fn append_point(&mut self, label: &'static [u8], point: &G);
 
     /// Check that a point is not the identity, then append it to the
     /// transcript.  Otherwise, return an error.
     fn validate_and_append_point(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError>;
 
     /// Compute a `label`ed challenge variable.
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr;
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> G::ScalarField;
 }
 
-impl TranscriptProtocol for Transcript {
+impl<G: AffineCurve> TranscriptProtocol<G> for Transcript {
     fn rangeproof_domain_sep(&mut self, n: u64, m: u64) {
         self.append_message(b"dom-sep", b"rangeproof v1");
         self.append_u64(b"n", n);
@@ -66,18 +66,18 @@ impl TranscriptProtocol for Transcript {
         self.append_message(b"dom-sep", b"r1cs-2phase");
     }
 
-    fn append_scalar(&mut self, label: &'static [u8], scalar: &Fr) {
+    fn append_scalar(&mut self, label: &'static [u8], scalar: &G::ScalarField) {
         self.append_message(label, &to_bytes!(scalar).unwrap());
     }
 
-    fn append_point(&mut self, label: &'static [u8], point: &G1Affine) {
+    fn append_point(&mut self, label: &'static [u8], point: &G) {
         self.append_message(label, &to_bytes!(point).unwrap());
     }
 
     fn validate_and_append_point(
         &mut self,
         label: &'static [u8],
-        point: &G1Affine,
+        point: &G,
     ) -> Result<(), ProofError> {
         if point.is_zero() {
             Err(ProofError::VerificationError)
@@ -86,11 +86,11 @@ impl TranscriptProtocol for Transcript {
         }
     }
 
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr {
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> G::ScalarField {
         let mut buf = [0u8; 32];
         self.challenge_bytes(label, &mut buf);
 
         let mut prng = ChaChaRng::from_seed(buf);
-        Fr::rand(&mut prng)
+        G::ScalarField::rand(&mut prng)
     }
 }

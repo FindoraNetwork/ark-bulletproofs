@@ -16,10 +16,10 @@ impl FftParameters for FqParameters {
 
     #[rustfmt::skip]
     const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([
-        0x0, 
-        0x51bf8b26ea50fecb, 
+        0x0,
+        0x51bf8b26ea50fecb,
         0x36890df020c720aa,
-        0x1, 
+        0x1,
         0x0
     ]);
 }

@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 
-use crate::curve::secq256k1::{BigIntType, Fr, G1Affine};
 use ark_ec::{msm, AffineCurve, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, PrimeField, UniformRand};
 use ark_std::{borrow::BorrowMut, mem, One, Zero};
@@ -27,17 +26,18 @@ use crate::transcript::TranscriptProtocol;
 /// When all constraints are added, the proving code calls `prove`
 /// which consumes the `Prover` instance, samples random challenges
 /// that instantiate the randomized constraints, and creates a complete proof.
-pub struct Prover<'g, T: BorrowMut<Transcript>> {
+pub struct Prover<'g, G: AffineCurve, T: BorrowMut<Transcript>> {
     transcript: T,
-    pc_gens: &'g PedersenGens,
+    pc_gens: &'g PedersenGens<G>,
     /// The constraints accumulated so far.
-    constraints: Vec<LinearCombination>,
+    constraints: Vec<LinearCombination<G::ScalarField>>,
     /// Secret data
-    secrets: Secrets,
+    secrets: Secrets<G>,
 
     /// This list holds closures that will be called in the second phase of the protocol,
     /// when non-randomized variables are committed.
-    deferred_constraints: Vec<Box<dyn Fn(&mut RandomizingProver<'g, T>) -> Result<(), R1CSError>>>,
+    deferred_constraints:
+        Vec<Box<dyn Fn(&mut RandomizingProver<'g, G, T>) -> Result<(), R1CSError>>>,
 
     /// Index of a pending multiplier that's not fully assigned yet.
     pending_multiplier: Option<usize>,
@@ -45,17 +45,17 @@ pub struct Prover<'g, T: BorrowMut<Transcript>> {
 
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
-struct Secrets {
+struct Secrets<G: AffineCurve> {
     /// Stores assignments to the "left" of multiplication gates
-    a_L: Vec<Fr>,
+    a_L: Vec<G::ScalarField>,
     /// Stores assignments to the "right" of multiplication gates
-    a_R: Vec<Fr>,
+    a_R: Vec<G::ScalarField>,
     /// Stores assignments to the "output" of multiplication gates
-    a_O: Vec<Fr>,
+    a_O: Vec<G::ScalarField>,
     /// High-level witness data (value openings to V commitments)
-    v: Vec<Fr>,
+    v: Vec<G::ScalarField>,
     /// High-level witness data (blinding openings to V commitments)
-    v_blinding: Vec<Fr>,
+    v_blinding: Vec<G::ScalarField>,
 }
 
 /// Prover in the randomizing phase.
@@ -65,12 +65,12 @@ struct Secrets {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingProver<'g, T: BorrowMut<Transcript>> {
-    prover: Prover<'g, T>,
+pub struct RandomizingProver<'g, G: AffineCurve, T: BorrowMut<Transcript>> {
+    prover: Prover<'g, G, T>,
 }
 
 /// Overwrite secrets with null bytes when they go out of scope.
-impl Drop for Secrets {
+impl<G: AffineCurve> Drop for Secrets<G> {
     fn drop(&mut self) {
         self.v.clear();
         self.v_blinding.clear();
@@ -89,20 +89,25 @@ impl Drop for Secrets {
         for e in self.a_O.iter_mut() {
             e.clear();
         }
-        // XXX use ClearOnDrop instead of doing the above
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for Prover<'g, T> {
+impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
+    for Prover<'g, G, T>
+{
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
 
     fn multiply(
         &mut self,
-        mut left: LinearCombination,
-        mut right: LinearCombination,
-    ) -> (Variable, Variable, Variable) {
+        mut left: LinearCombination<G::ScalarField>,
+        mut right: LinearCombination<G::ScalarField>,
+    ) -> (
+        Variable<G::ScalarField>,
+        Variable<G::ScalarField>,
+        Variable<G::ScalarField>,
+    ) {
         // Synthesize the assignments for l,r,o
         let l = self.eval(&left);
         let r = self.eval(&right);
@@ -118,15 +123,18 @@ impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for Prover<'g, T> {
         self.secrets.a_O.push(o);
 
         // Constrain l,r,o:
-        left.terms.push((l_var, -Fr::one()));
-        right.terms.push((r_var, -Fr::one()));
+        left.terms.push((l_var, -G::ScalarField::one()));
+        right.terms.push((r_var, -G::ScalarField::one()));
         self.constrain(left);
         self.constrain(right);
 
         (l_var, r_var, o_var)
     }
 
-    fn allocate(&mut self, assignment: Option<Fr>) -> Result<Variable, R1CSError> {
+    fn allocate(
+        &mut self,
+        assignment: Option<G::ScalarField>,
+    ) -> Result<Variable<G::ScalarField>, R1CSError> {
         let scalar = assignment.ok_or(R1CSError::MissingAssignment)?;
 
         match self.pending_multiplier {
@@ -134,8 +142,8 @@ impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for Prover<'g, T> {
                 let i = self.secrets.a_L.len();
                 self.pending_multiplier = Some(i);
                 self.secrets.a_L.push(scalar);
-                self.secrets.a_R.push(Fr::zero());
-                self.secrets.a_O.push(Fr::zero());
+                self.secrets.a_R.push(G::ScalarField::zero());
+                self.secrets.a_O.push(G::ScalarField::zero());
                 Ok(Variable::MultiplierLeft(i))
             }
             Some(i) => {
@@ -149,8 +157,15 @@ impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for Prover<'g, T> {
 
     fn allocate_multiplier(
         &mut self,
-        input_assignments: Option<(Fr, Fr)>,
-    ) -> Result<(Variable, Variable, Variable), R1CSError> {
+        input_assignments: Option<(G::ScalarField, G::ScalarField)>,
+    ) -> Result<
+        (
+            Variable<G::ScalarField>,
+            Variable<G::ScalarField>,
+            Variable<G::ScalarField>,
+        ),
+        R1CSError,
+    > {
         let (l, r) = input_assignments.ok_or(R1CSError::MissingAssignment)?;
         let o = l * r;
 
@@ -170,15 +185,17 @@ impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for Prover<'g, T> {
         self.secrets.a_L.len()
     }
 
-    fn constrain(&mut self, lc: LinearCombination) {
+    fn constrain(&mut self, lc: LinearCombination<G::ScalarField>) {
         // TODO: check that the linear combinations are valid
         // (e.g. that variables are valid, that the linear combination evals to 0 for prover, etc).
         self.constraints.push(lc);
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>> RandomizableConstraintSystem for Prover<'g, T> {
-    type RandomizedCS = RandomizingProver<'g, T>;
+impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizableConstraintSystem<G::ScalarField>
+    for Prover<'g, G, T>
+{
+    type RandomizedCS = RandomizingProver<'g, G, T>;
 
     fn specify_randomized_constraints<F>(&mut self, callback: F) -> Result<(), R1CSError>
     where
@@ -189,27 +206,43 @@ impl<'g, T: BorrowMut<Transcript>> RandomizableConstraintSystem for Prover<'g, T
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for RandomizingProver<'g, T> {
+impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
+    for RandomizingProver<'g, G, T>
+{
     fn transcript(&mut self) -> &mut Transcript {
         self.prover.transcript.borrow_mut()
     }
 
     fn multiply(
         &mut self,
-        left: LinearCombination,
-        right: LinearCombination,
-    ) -> (Variable, Variable, Variable) {
+        left: LinearCombination<G::ScalarField>,
+        right: LinearCombination<G::ScalarField>,
+    ) -> (
+        Variable<G::ScalarField>,
+        Variable<G::ScalarField>,
+        Variable<G::ScalarField>,
+    ) {
         self.prover.multiply(left, right)
     }
 
-    fn allocate(&mut self, assignment: Option<Fr>) -> Result<Variable, R1CSError> {
+    fn allocate(
+        &mut self,
+        assignment: Option<G::ScalarField>,
+    ) -> Result<Variable<G::ScalarField>, R1CSError> {
         self.prover.allocate(assignment)
     }
 
     fn allocate_multiplier(
         &mut self,
-        input_assignments: Option<(Fr, Fr)>,
-    ) -> Result<(Variable, Variable, Variable), R1CSError> {
+        input_assignments: Option<(G::ScalarField, G::ScalarField)>,
+    ) -> Result<
+        (
+            Variable<G::ScalarField>,
+            Variable<G::ScalarField>,
+            Variable<G::ScalarField>,
+        ),
+        R1CSError,
+    > {
         self.prover.allocate_multiplier(input_assignments)
     }
 
@@ -217,18 +250,23 @@ impl<'g, T: BorrowMut<Transcript>> ConstraintSystem for RandomizingProver<'g, T>
         self.prover.multipliers_len()
     }
 
-    fn constrain(&mut self, lc: LinearCombination) {
+    fn constrain(&mut self, lc: LinearCombination<G::ScalarField>) {
         self.prover.constrain(lc)
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>> RandomizedConstraintSystem for RandomizingProver<'g, T> {
-    fn challenge_scalar(&mut self, label: &'static [u8]) -> Fr {
-        self.prover.transcript.borrow_mut().challenge_scalar(label)
+impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizedConstraintSystem<G::ScalarField>
+    for RandomizingProver<'g, G, T>
+{
+    fn challenge_scalar(&mut self, label: &'static [u8]) -> G::ScalarField {
+        <Transcript as TranscriptProtocol<G>>::challenge_scalar(
+            self.prover.transcript.borrow_mut(),
+            label,
+        )
     }
 }
 
-impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
+impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -249,8 +287,8 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     /// # Returns
     ///
     /// Returns a new `Prover` instance.
-    pub fn new(pc_gens: &'g PedersenGens, mut transcript: T) -> Self {
-        transcript.borrow_mut().r1cs_domain_sep();
+    pub fn new(pc_gens: &'g PedersenGens<G>, mut transcript: T) -> Self {
+        <Transcript as TranscriptProtocol<G>>::r1cs_domain_sep(transcript.borrow_mut());
 
         Prover {
             pc_gens,
@@ -285,7 +323,11 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     ///
     /// Returns a pair of a Pedersen commitment (as a compressed Ristretto point),
     /// and a [`Variable`] corresponding to it, which can be used to form constraints.
-    pub fn commit(&mut self, v: Fr, v_blinding: Fr) -> (G1Affine, Variable) {
+    pub fn commit(
+        &mut self,
+        v: G::ScalarField,
+        v_blinding: G::ScalarField,
+    ) -> (G, Variable<G::ScalarField>) {
         let i = self.secrets.v.len();
         self.secrets.v.push(v);
         self.secrets.v_blinding.push(v_blinding);
@@ -308,14 +350,22 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     /// (wL, wR, wO, wV)
     /// ```
     /// where `w{L,R,O}` is \\( z \cdot z^Q \cdot W_{L,R,O} \\).
-    fn flattened_constraints(&mut self, z: &Fr) -> (Vec<Fr>, Vec<Fr>, Vec<Fr>, Vec<Fr>) {
+    fn flattened_constraints(
+        &mut self,
+        z: &G::ScalarField,
+    ) -> (
+        Vec<G::ScalarField>,
+        Vec<G::ScalarField>,
+        Vec<G::ScalarField>,
+        Vec<G::ScalarField>,
+    ) {
         let n = self.secrets.a_L.len();
         let m = self.secrets.v.len();
 
-        let mut wL = vec![Fr::zero(); n];
-        let mut wR = vec![Fr::zero(); n];
-        let mut wO = vec![Fr::zero(); n];
-        let mut wV = vec![Fr::zero(); m];
+        let mut wL = vec![G::ScalarField::zero(); n];
+        let mut wR = vec![G::ScalarField::zero(); n];
+        let mut wO = vec![G::ScalarField::zero(); n];
+        let mut wV = vec![G::ScalarField::zero(); m];
 
         let mut exp_z = *z;
         for lc in self.constraints.iter() {
@@ -336,6 +386,7 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                     Variable::One() => {
                         // The prover doesn't need to handle constant terms
                     }
+                    _ => {}
                 }
             }
             exp_z *= z;
@@ -344,7 +395,7 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         (wL, wR, wO, wV)
     }
 
-    fn eval(&self, lc: &LinearCombination) -> Fr {
+    fn eval(&self, lc: &LinearCombination<G::ScalarField>) -> G::ScalarField {
         lc.terms
             .iter()
             .map(|(var, coeff)| {
@@ -354,7 +405,8 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                         Variable::MultiplierRight(i) => self.secrets.a_R[*i],
                         Variable::MultiplierOutput(i) => self.secrets.a_O[*i],
                         Variable::Committed(i) => self.secrets.v[*i],
-                        Variable::One() => Fr::one(),
+                        Variable::One() => G::ScalarField::one(),
+                        _ => G::ScalarField::zero(),
                     }
             })
             .sum()
@@ -367,10 +419,14 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         self.pending_multiplier = None;
 
         if self.deferred_constraints.len() == 0 {
-            self.transcript.borrow_mut().r1cs_1phase_domain_sep();
+            <Transcript as TranscriptProtocol<G>>::r1cs_1phase_domain_sep(
+                self.transcript.borrow_mut(),
+            );
             Ok(self)
         } else {
-            self.transcript.borrow_mut().r1cs_2phase_domain_sep();
+            <Transcript as TranscriptProtocol<G>>::r1cs_2phase_domain_sep(
+                self.transcript.borrow_mut(),
+            );
             // Note: the wrapper could've used &mut instead of ownership,
             // but specifying lifetimes for boxed closures is not going to be nice,
             // so we move the self into wrapper and then move it back out afterwards.
@@ -387,8 +443,8 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     pub fn prove<R: CryptoRng + RngCore>(
         self,
         prng: &mut R,
-        bp_gens: &BulletproofGens,
-    ) -> Result<R1CSProof, R1CSError> {
+        bp_gens: &BulletproofGens<G>,
+    ) -> Result<R1CSProof<G>, R1CSError> {
         self.prove_and_return_transcript(prng, bp_gens)
             .map(|(proof, _transcript)| proof)
     }
@@ -397,8 +453,8 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
     pub fn prove_and_return_transcript<R: CryptoRng + RngCore>(
         mut self,
         prng: &mut R,
-        bp_gens: &BulletproofGens,
-    ) -> Result<(R1CSProof, T), R1CSError> {
+        bp_gens: &BulletproofGens<G>,
+    ) -> Result<(R1CSProof<G>, T), R1CSError> {
         use crate::util;
         use std::iter;
 
@@ -444,12 +500,14 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         // We are performing a single-party circuit proof, so party index is 0.
         let gens = bp_gens.share(0);
 
-        let i_blinding1 = Fr::rand(&mut rng);
-        let o_blinding1 = Fr::rand(&mut rng);
-        let s_blinding1 = Fr::rand(&mut rng);
+        let i_blinding1 = G::ScalarField::rand(&mut rng);
+        let o_blinding1 = G::ScalarField::rand(&mut rng);
+        let s_blinding1 = G::ScalarField::rand(&mut rng);
 
-        let mut s_L1: Vec<Fr> = (0..n1).map(|_| Fr::rand(&mut rng)).collect();
-        let mut s_R1: Vec<Fr> = (0..n1).map(|_| Fr::rand(&mut rng)).collect();
+        let mut s_L1: Vec<G::ScalarField> =
+            (0..n1).map(|_| G::ScalarField::rand(&mut rng)).collect();
+        let mut s_R1: Vec<G::ScalarField> =
+            (0..n1).map(|_| G::ScalarField::rand(&mut rng)).collect();
 
         // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
         let A_I1 = msm::VariableBase::msm(
@@ -457,12 +515,12 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                 .chain(gens.G(n1))
                 .chain(gens.H(n1))
                 .map(|f| f.clone())
-                .collect::<Vec<G1Affine>>(),
+                .collect::<Vec<G>>(),
             &iter::once(&i_blinding1)
                 .chain(self.secrets.a_L.iter())
                 .chain(self.secrets.a_R.iter())
                 .map(|f| f.into_repr())
-                .collect::<Vec<BigIntType>>(),
+                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
         )
         .into_affine();
 
@@ -471,11 +529,11 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
             &iter::once(&self.pc_gens.B_blinding)
                 .chain(gens.G(n1))
                 .map(|f| f.clone())
-                .collect::<Vec<G1Affine>>(),
+                .collect::<Vec<G>>(),
             &iter::once(&o_blinding1)
                 .chain(self.secrets.a_O.iter())
                 .map(|f| f.into_repr())
-                .collect::<Vec<BigIntType>>(),
+                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
         )
         .into_affine();
 
@@ -485,12 +543,12 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                 .chain(gens.G(n1))
                 .chain(gens.H(n1))
                 .map(|f| f.clone())
-                .collect::<Vec<G1Affine>>(),
+                .collect::<Vec<G>>(),
             &iter::once(&s_blinding1)
                 .chain(s_L1.iter())
                 .chain(s_R1.iter())
                 .map(|f| f.into_repr())
-                .collect::<Vec<BigIntType>>(),
+                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
         )
         .into_affine();
 
@@ -519,13 +577,23 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         let has_2nd_phase_commitments = n2 > 0;
 
         let (i_blinding2, o_blinding2, s_blinding2) = if has_2nd_phase_commitments {
-            (Fr::rand(&mut rng), Fr::rand(&mut rng), Fr::rand(&mut rng))
+            (
+                G::ScalarField::rand(&mut rng),
+                G::ScalarField::rand(&mut rng),
+                G::ScalarField::rand(&mut rng),
+            )
         } else {
-            (Fr::zero(), Fr::zero(), Fr::zero())
+            (
+                G::ScalarField::zero(),
+                G::ScalarField::zero(),
+                G::ScalarField::zero(),
+            )
         };
 
-        let mut s_L2: Vec<Fr> = (0..n2).map(|_| Fr::rand(&mut rng)).collect();
-        let mut s_R2: Vec<Fr> = (0..n2).map(|_| Fr::rand(&mut rng)).collect();
+        let mut s_L2: Vec<G::ScalarField> =
+            (0..n2).map(|_| G::ScalarField::rand(&mut rng)).collect();
+        let mut s_R2: Vec<G::ScalarField> =
+            (0..n2).map(|_| G::ScalarField::rand(&mut rng)).collect();
 
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
             (
@@ -535,12 +603,12 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
                         .map(|f| f.clone())
-                        .collect::<Vec<G1Affine>>(),
+                        .collect::<Vec<G>>(),
                     &iter::once(&i_blinding2)
                         .chain(self.secrets.a_L.iter().skip(n1))
                         .chain(self.secrets.a_R.iter().skip(n1))
                         .map(|f| f.into_repr())
-                        .collect::<Vec<BigIntType>>(),
+                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
                 )
                 .into_affine(),
                 // A_O = <a_O, G> + o_blinding * B_blinding
@@ -548,11 +616,11 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                     &iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .map(|f| f.clone())
-                        .collect::<Vec<G1Affine>>(),
+                        .collect::<Vec<G>>(),
                     &iter::once(&o_blinding2)
                         .chain(self.secrets.a_O.iter().skip(n1))
                         .map(|f| f.into_repr())
-                        .collect::<Vec<BigIntType>>(),
+                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
                 )
                 .into_affine(),
                 // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
@@ -561,12 +629,12 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
                         .map(|f| f.clone())
-                        .collect::<Vec<G1Affine>>(),
+                        .collect::<Vec<G>>(),
                     &iter::once(&s_blinding2)
                         .chain(s_L2.iter())
                         .chain(s_R2.iter())
                         .map(|f| f.into_repr())
-                        .collect::<Vec<BigIntType>>(),
+                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
                 )
                 .into_affine(),
             )
@@ -575,7 +643,7 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
             // there are no variables to commit,
             // the commitments _must_ be identity points,
             // so we can hardcode them saving 3 mults+compressions.
-            (G1Affine::zero(), G1Affine::zero(), G1Affine::zero())
+            (G::zero(), G::zero(), G::zero())
         };
 
         let transcript = self.transcript.borrow_mut();
@@ -585,17 +653,20 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
 
         // 4. Compute blinded vector polynomials l(x) and r(x)
 
-        let y = transcript.challenge_scalar(b"y");
-        let z = transcript.challenge_scalar(b"z");
+        let y: G::ScalarField =
+            <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"y");
+        let z = <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"z");
 
         let (wL, wR, wO, wV) = self.flattened_constraints(&z);
 
-        let mut l_poly = util::VecPoly3::zero(n);
-        let mut r_poly = util::VecPoly3::zero(n);
+        let mut l_poly = util::VecPoly3::<G>::zero(n);
+        let mut r_poly = util::VecPoly3::<G>::zero(n);
 
-        let mut exp_y = Fr::one(); // y^n starting at n=0
+        let mut exp_y = G::ScalarField::one(); // y^n starting at n=0
         let y_inv = y.inverse().unwrap();
-        let exp_y_inv = util::exp_iter(y_inv).take(padded_n).collect::<Vec<_>>();
+        let exp_y_inv = util::exp_iter::<G>(y_inv)
+            .take(padded_n)
+            .collect::<Vec<_>>();
 
         let sLsR = s_L1
             .iter()
@@ -622,11 +693,11 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
 
         let t_poly = util::VecPoly3::special_inner_product(&l_poly, &r_poly);
 
-        let t_1_blinding = Fr::rand(&mut rng);
-        let t_3_blinding = Fr::rand(&mut rng);
-        let t_4_blinding = Fr::rand(&mut rng);
-        let t_5_blinding = Fr::rand(&mut rng);
-        let t_6_blinding = Fr::rand(&mut rng);
+        let t_1_blinding = G::ScalarField::rand(&mut rng);
+        let t_3_blinding = G::ScalarField::rand(&mut rng);
+        let t_4_blinding = G::ScalarField::rand(&mut rng);
+        let t_5_blinding = G::ScalarField::rand(&mut rng);
+        let t_6_blinding = G::ScalarField::rand(&mut rng);
 
         let T_1 = self.pc_gens.commit(t_poly.t1, t_1_blinding);
         let T_3 = self.pc_gens.commit(t_poly.t3, t_3_blinding);
@@ -641,18 +712,18 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         transcript.append_point(b"T_5", &T_5);
         transcript.append_point(b"T_6", &T_6);
 
-        let u = transcript.challenge_scalar(b"u");
-        let x = transcript.challenge_scalar(b"x");
+        let u = <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"u");
+        let x = <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"x");
 
         // t_2_blinding = <z*z^Q, W_V * v_blinding>
         // in the t_x_blinding calculations, line 76.
-        let t_2_blinding = wV
+        let t_2_blinding: G::ScalarField = wV
             .iter()
             .zip(self.secrets.v_blinding.iter())
-            .map(|(c, v_blinding)| *c * v_blinding)
+            .map(|(c, v_blinding)| *v_blinding * c)
             .sum();
 
-        let t_blinding_poly = util::Poly6 {
+        let t_blinding_poly = util::Poly6::<G> {
             t1: t_1_blinding,
             t2: t_2_blinding,
             t3: t_3_blinding,
@@ -664,10 +735,10 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
         let t_x = t_poly.eval(x);
         let t_x_blinding = t_blinding_poly.eval(x);
         let mut l_vec = l_poly.eval(x);
-        l_vec.append(&mut vec![Fr::zero(); pad]);
+        l_vec.append(&mut vec![G::ScalarField::zero(); pad]);
 
         let mut r_vec = r_poly.eval(x);
-        r_vec.append(&mut vec![Fr::zero(); pad]);
+        r_vec.append(&mut vec![G::ScalarField::zero(); pad]);
 
         // XXX this should refer to the notes to explain why this is correct
         for i in n..padded_n {
@@ -681,15 +752,24 @@ impl<'g, T: BorrowMut<Transcript>> Prover<'g, T> {
 
         let e_blinding = x * (i_blinding + x * (o_blinding + x * s_blinding));
 
-        transcript.append_scalar(b"t_x", &t_x);
-        transcript.append_scalar(b"t_x_blinding", &t_x_blinding);
-        transcript.append_scalar(b"e_blinding", &e_blinding);
+        <Transcript as TranscriptProtocol<G>>::append_scalar(transcript, b"t_x", &t_x);
+        <Transcript as TranscriptProtocol<G>>::append_scalar(
+            transcript,
+            b"t_x_blinding",
+            &t_x_blinding,
+        );
+        <Transcript as TranscriptProtocol<G>>::append_scalar(
+            transcript,
+            b"e_blinding",
+            &e_blinding,
+        );
 
         // Get a challenge value to combine statements for the IPP
-        let w = transcript.challenge_scalar(b"w");
+        let w: G::ScalarField =
+            <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"w");
         let Q = self.pc_gens.B.mul(w.into_repr());
 
-        let G_factors = iter::repeat(Fr::one())
+        let G_factors = iter::repeat(G::ScalarField::one())
             .take(n1)
             .chain(iter::repeat(u).take(n2 + pad))
             .collect::<Vec<_>>();

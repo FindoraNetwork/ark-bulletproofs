@@ -6,16 +6,15 @@
 
 extern crate alloc;
 
-use crate::curve::secq256k1::{Fr, G1Affine};
 use ark_ec::{AffineCurve, ProjectiveCurve};
 use ark_ff::{to_bytes, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_std::marker::PhantomData;
 use ark_std::{
     io::{Read, Write},
     ops::Add,
     rand::SeedableRng,
     vec::Vec,
-    UniformRand,
 };
 use digest::Digest;
 use rand_chacha::ChaChaRng;
@@ -33,16 +32,16 @@ use sha3::Sha3_512;
 /// * `B_blinding`: the result of `ristretto255` SHA3-512
 /// hash-to-group on input `B_bytes`.
 #[derive(Copy, Clone)]
-pub struct PedersenGens {
+pub struct PedersenGens<G: AffineCurve> {
     /// Base for the committed value
-    pub B: G1Affine,
+    pub B: G,
     /// Base for the blinding factor
-    pub B_blinding: G1Affine,
+    pub B_blinding: G,
 }
 
-impl PedersenGens {
+impl<G: AffineCurve> PedersenGens<G> {
     /// Creates a Pedersen commitment using the value scalar and a blinding factor.
-    pub fn commit(&self, value: Fr, blinding: Fr) -> G1Affine {
+    pub fn commit(&self, value: G::ScalarField, blinding: G::ScalarField) -> G {
         self.B
             .mul(value.into_repr())
             .add(self.B_blinding.mul(blinding.into_repr()))
@@ -50,9 +49,9 @@ impl PedersenGens {
     }
 }
 
-impl Default for PedersenGens {
+impl<G: AffineCurve> Default for PedersenGens<G> {
     fn default() -> Self {
-        let bytes = to_bytes!(G1Affine::prime_subgroup_generator()).unwrap();
+        let bytes = to_bytes!(G::prime_subgroup_generator()).unwrap();
 
         let mut hash = Sha3_512::new();
         Digest::update(&mut hash, &bytes);
@@ -64,8 +63,8 @@ impl Default for PedersenGens {
         let mut prng = ChaChaRng::from_seed(res);
 
         PedersenGens {
-            B: G1Affine::prime_subgroup_generator(),
-            B_blinding: G1Affine::rand(&mut prng),
+            B: G::prime_subgroup_generator(),
+            B_blinding: G::rand(&mut prng),
         }
     }
 }
@@ -73,11 +72,12 @@ impl Default for PedersenGens {
 /// The `GeneratorsChain` creates an arbitrary-long sequence of
 /// orthogonal generators.  The sequence can be deterministically
 /// produced starting with an arbitrary point.
-struct GeneratorsChain {
+struct GeneratorsChain<G: AffineCurve> {
     prng: ChaChaRng,
+    affine_curve_phantom: PhantomData<G>,
 }
 
-impl GeneratorsChain {
+impl<G: AffineCurve> GeneratorsChain<G> {
     /// Creates a chain of generators, determined by the hash of `label`.
     fn new(label: &[u8]) -> Self {
         let mut hash = Sha3_512::new();
@@ -90,30 +90,33 @@ impl GeneratorsChain {
 
         let prng = ChaChaRng::from_seed(res);
 
-        GeneratorsChain { prng }
+        GeneratorsChain {
+            prng,
+            affine_curve_phantom: PhantomData,
+        }
     }
 
     /// Advances the reader n times, squeezing and discarding
     /// the result.
     fn fast_forward(mut self, n: usize) -> Self {
         for _ in 0..n {
-            let _ = G1Affine::rand(&mut self.prng);
+            let _ = G::rand(&mut self.prng);
         }
         self
     }
 }
 
-impl Default for GeneratorsChain {
+impl<G: AffineCurve> Default for GeneratorsChain<G> {
     fn default() -> Self {
         Self::new(&[])
     }
 }
 
-impl Iterator for GeneratorsChain {
-    type Item = G1Affine;
+impl<G: AffineCurve> Iterator for GeneratorsChain<G> {
+    type Item = G;
 
     fn next(&mut self) -> Option<Self::Item> {
-        Some(G1Affine::rand(&mut self.prng))
+        Some(G::rand(&mut self.prng))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -148,18 +151,18 @@ impl Iterator for GeneratorsChain {
 /// constraint system proofs, since the generators are namespaced by
 /// their party index.
 #[derive(Clone, CanonicalSerialize, CanonicalDeserialize)]
-pub struct BulletproofGens {
+pub struct BulletproofGens<G: AffineCurve> {
     /// The maximum number of usable generators for each party.
     pub gens_capacity: usize,
     /// Number of values or parties
     pub party_capacity: usize,
     /// Precomputed \\(\mathbf G\\) generators for each party.
-    G_vec: Vec<Vec<G1Affine>>,
+    G_vec: Vec<Vec<G>>,
     /// Precomputed \\(\mathbf H\\) generators for each party.
-    H_vec: Vec<Vec<G1Affine>>,
+    H_vec: Vec<Vec<G>>,
 }
 
-impl BulletproofGens {
+impl<G: AffineCurve> BulletproofGens<G> {
     /// Create a new `BulletproofGens` object.
     ///
     /// # Inputs
@@ -185,7 +188,7 @@ impl BulletproofGens {
 
     /// Returns j-th share of generators, with an appropriate
     /// slice of vectors G and H for the j-th range proof.
-    pub fn share(&self, j: usize) -> BulletproofGensShare<'_> {
+    pub fn share(&self, j: usize) -> BulletproofGensShare<'_, G> {
         BulletproofGensShare {
             gens: &self,
             share: j,
@@ -206,14 +209,14 @@ impl BulletproofGens {
             let mut label = [b'G', 0, 0, 0, 0];
             LittleEndian::write_u32(&mut label[1..5], party_index);
             self.G_vec[i].extend(
-                &mut GeneratorsChain::new(&label)
+                &mut GeneratorsChain::<G>::new(&label)
                     .fast_forward(self.gens_capacity)
                     .take(new_capacity - self.gens_capacity),
             );
 
             label[0] = b'H';
             self.H_vec[i].extend(
-                &mut GeneratorsChain::new(&label)
+                &mut GeneratorsChain::<G>::new(&label)
                     .fast_forward(self.gens_capacity)
                     .take(new_capacity - self.gens_capacity),
             );
@@ -222,7 +225,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' G generators with given size `n`.
-    pub fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
+    pub fn G(&self, n: usize, m: usize) -> impl Iterator<Item = &G> {
         AggregatedGensIter {
             n,
             m,
@@ -233,7 +236,7 @@ impl BulletproofGens {
     }
 
     /// Return an iterator over the aggregation of the parties' H generators with given size `n`.
-    pub fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &G1Affine> {
+    pub fn H(&self, n: usize, m: usize) -> impl Iterator<Item = &G> {
         AggregatedGensIter {
             n,
             m,
@@ -244,16 +247,16 @@ impl BulletproofGens {
     }
 }
 
-struct AggregatedGensIter<'a> {
-    array: &'a Vec<Vec<G1Affine>>,
+struct AggregatedGensIter<'a, G: AffineCurve> {
+    array: &'a Vec<Vec<G>>,
     n: usize,
     m: usize,
     party_idx: usize,
     gen_idx: usize,
 }
 
-impl<'a> Iterator for AggregatedGensIter<'a> {
-    type Item = &'a G1Affine;
+impl<'a, G: AffineCurve> Iterator for AggregatedGensIter<'a, G> {
+    type Item = &'a G;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.gen_idx >= self.n {
@@ -285,21 +288,21 @@ impl<'a> Iterator for AggregatedGensIter<'a> {
 ///
 /// The `BulletproofGensShare` is produced by [`BulletproofGens::share()`].
 #[derive(Copy, Clone)]
-pub struct BulletproofGensShare<'a> {
+pub struct BulletproofGensShare<'a, G: AffineCurve> {
     /// The parent object that this is a view into
-    gens: &'a BulletproofGens,
+    gens: &'a BulletproofGens<G>,
     /// Which share we are
     share: usize,
 }
 
-impl<'a> BulletproofGensShare<'a> {
+impl<'a, G: AffineCurve> BulletproofGensShare<'a, G> {
     /// Return an iterator over this party's G generators with given size `n`.
-    pub(crate) fn G(&self, n: usize) -> impl Iterator<Item = &'a G1Affine> {
+    pub(crate) fn G(&self, n: usize) -> impl Iterator<Item = &'a G> {
         self.gens.G_vec[self.share].iter().take(n)
     }
 
     /// Return an iterator over this party's H generators with given size `n`.
-    pub(crate) fn H(&self, n: usize) -> impl Iterator<Item = &'a G1Affine> {
+    pub(crate) fn H(&self, n: usize) -> impl Iterator<Item = &'a G> {
         self.gens.H_vec[self.share].iter().take(n)
     }
 }
@@ -310,11 +313,13 @@ mod tests {
 
     #[test]
     fn aggregated_gens_iter_matches_flat_map() {
-        let gens = BulletproofGens::new(64, 8);
+        type G = crate::curve::secq256k1::G1Affine;
+
+        let gens = BulletproofGens::<G>::new(64, 8);
 
         let helper = |n: usize, m: usize| {
-            let agg_G: Vec<G1Affine> = gens.G(n, m).cloned().collect();
-            let flat_G: Vec<G1Affine> = gens
+            let agg_G: Vec<G> = gens.G(n, m).cloned().collect();
+            let flat_G: Vec<G> = gens
                 .G_vec
                 .iter()
                 .take(m)
@@ -322,8 +327,8 @@ mod tests {
                 .cloned()
                 .collect();
 
-            let agg_H: Vec<G1Affine> = gens.H(n, m).cloned().collect();
-            let flat_H: Vec<G1Affine> = gens
+            let agg_H: Vec<G> = gens.H(n, m).cloned().collect();
+            let flat_H: Vec<G> = gens
                 .H_vec
                 .iter()
                 .take(m)
@@ -351,17 +356,19 @@ mod tests {
 
     #[test]
     fn resizing_small_gens_matches_creating_bigger_gens() {
-        let gens = BulletproofGens::new(64, 8);
+        type G = crate::curve::secq256k1::G1Affine;
 
-        let mut gen_resized = BulletproofGens::new(32, 8);
+        let gens = BulletproofGens::<G>::new(64, 8);
+
+        let mut gen_resized = BulletproofGens::<G>::new(32, 8);
         gen_resized.increase_capacity(64);
 
         let helper = |n: usize, m: usize| {
-            let gens_G: Vec<G1Affine> = gens.G(n, m).cloned().collect();
-            let gens_H: Vec<G1Affine> = gens.H(n, m).cloned().collect();
+            let gens_G: Vec<G> = gens.G(n, m).cloned().collect();
+            let gens_H: Vec<G> = gens.H(n, m).cloned().collect();
 
-            let resized_G: Vec<G1Affine> = gen_resized.G(n, m).cloned().collect();
-            let resized_H: Vec<G1Affine> = gen_resized.H(n, m).cloned().collect();
+            let resized_G: Vec<G> = gen_resized.G(n, m).cloned().collect();
+            let resized_H: Vec<G> = gen_resized.H(n, m).cloned().collect();
 
             assert_eq!(gens_G, resized_G);
             assert_eq!(gens_H, resized_H);
