@@ -16,26 +16,26 @@ use criterion::Criterion;
 // someone wants to figure a way to use #[path] attributes or
 // something to avoid the duplication.
 
-extern crate ark_bulletproofs_secq256k1;
+extern crate ark_bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use ark_bulletproofs_secq256k1::curve::secq256k1::{Fr, G1Affine};
-use ark_bulletproofs_secq256k1::r1cs::*;
-use ark_bulletproofs_secq256k1::{BulletproofGens, PedersenGens};
+use ark_bulletproofs::curve::zorro::{Fr, G1Affine};
+use ark_bulletproofs::r1cs::*;
+use ark_bulletproofs::{BulletproofGens, PedersenGens};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
-struct ShuffleProof(R1CSProof);
+struct ShuffleProof(R1CSProof<G1Affine>);
 
 impl ShuffleProof {
-    fn gadget<CS: RandomizableConstraintSystem>(
+    fn gadget<CS: RandomizableConstraintSystem<Fr>>(
         cs: &mut CS,
-        x: Vec<Variable>,
-        y: Vec<Variable>,
+        x: Vec<Variable<Fr>>,
+        y: Vec<Variable<Fr>>,
     ) -> Result<(), R1CSError> {
         assert_eq!(x.len(), y.len());
         let k = x.len();
@@ -80,8 +80,8 @@ impl ShuffleProof {
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
     pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
         prng: &mut R,
-        pc_gens: &'b PedersenGens,
-        bp_gens: &'b BulletproofGens,
+        pc_gens: &'b PedersenGens<G1Affine>,
+        bp_gens: &'b BulletproofGens<G1Affine>,
         transcript: &'a mut Transcript,
         input: &[Fr],
         output: &[Fr],
@@ -116,8 +116,8 @@ impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
     pub fn verify<'a, 'b>(
         &self,
-        pc_gens: &'b PedersenGens,
-        bp_gens: &'b BulletproofGens,
+        pc_gens: &'b PedersenGens<G1Affine>,
+        bp_gens: &'b BulletproofGens<G1Affine>,
         transcript: &'a mut Transcript,
         input_commitments: &Vec<G1Affine>,
         output_commitments: &Vec<G1Affine>,

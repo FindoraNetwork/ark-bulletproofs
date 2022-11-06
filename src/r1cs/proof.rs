@@ -1,12 +1,8 @@
 #![allow(non_snake_case)]
 //! Definition of the proof struct.
 
-use crate::{
-    curve::secq256k1::{Fr, G1Affine},
-    errors::R1CSError,
-    inner_product_proof::InnerProductProof,
-    ProofError,
-};
+use crate::{errors::R1CSError, inner_product_proof::InnerProductProof, ProofError};
+use ark_ec::AffineCurve;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::io::{Cursor, Read, Write};
 
@@ -28,41 +24,41 @@ use ark_std::io::{Cursor, Read, Write};
 /// proof.
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 #[allow(non_snake_case)]
-pub struct R1CSProof {
+pub struct R1CSProof<G: AffineCurve> {
     /// Commitment to the values of input wires in the first phase.
-    pub(super) A_I1: G1Affine,
+    pub(super) A_I1: G,
     /// Commitment to the values of output wires in the first phase.
-    pub(super) A_O1: G1Affine,
+    pub(super) A_O1: G,
     /// Commitment to the blinding factors in the first phase.
-    pub(super) S1: G1Affine,
+    pub(super) S1: G,
     /// Commitment to the values of input wires in the second phase.
-    pub(super) A_I2: G1Affine,
+    pub(super) A_I2: G,
     /// Commitment to the values of output wires in the second phase.
-    pub(super) A_O2: G1Affine,
+    pub(super) A_O2: G,
     /// Commitment to the blinding factors in the second phase.
-    pub(super) S2: G1Affine,
+    pub(super) S2: G,
     /// Commitment to the \\(t_1\\) coefficient of \\( t(x) \\)
-    pub(super) T_1: G1Affine,
+    pub(super) T_1: G,
     /// Commitment to the \\(t_3\\) coefficient of \\( t(x) \\)
-    pub(super) T_3: G1Affine,
+    pub(super) T_3: G,
     /// Commitment to the \\(t_4\\) coefficient of \\( t(x) \\)
-    pub(super) T_4: G1Affine,
+    pub(super) T_4: G,
     /// Commitment to the \\(t_5\\) coefficient of \\( t(x) \\)
-    pub(super) T_5: G1Affine,
+    pub(super) T_5: G,
     /// Commitment to the \\(t_6\\) coefficient of \\( t(x) \\)
-    pub(super) T_6: G1Affine,
+    pub(super) T_6: G,
     /// Evaluation of the polynomial \\(t(x)\\) at the challenge point \\(x\\)
-    pub(super) t_x: Fr,
+    pub(super) t_x: G::ScalarField,
     /// Blinding factor for the synthetic commitment to \\( t(x) \\)
-    pub(super) t_x_blinding: Fr,
+    pub(super) t_x_blinding: G::ScalarField,
     /// Blinding factor for the synthetic commitment to the
     /// inner-product arguments
-    pub(super) e_blinding: Fr,
+    pub(super) e_blinding: G::ScalarField,
     /// Proof data for the inner-product argument.
-    pub(super) ipp_proof: InnerProductProof,
+    pub(super) ipp_proof: InnerProductProof<G>,
 }
 
-impl R1CSProof {
+impl<G: AffineCurve> R1CSProof<G> {
     /// Serializes the proof into a byte array of 1 version byte + \\((13 or 16) + 2k\\) 32-byte elements,
     /// where \\(k=\lceil \log_2(n) \rceil\\) and \\(n\\) is the number of multiplication gates.
     ///
@@ -84,9 +80,9 @@ impl R1CSProof {
     /// Deserializes the proof from a byte slice.
     ///
     /// Returns an error if the byte slice cannot be parsed into a `R1CSProof`.
-    pub fn from_bytes(slice: &[u8]) -> Result<R1CSProof, R1CSError> {
+    pub fn from_bytes(slice: &[u8]) -> Result<R1CSProof<G>, R1CSError> {
         let mut cursor = Cursor::new(slice);
-        let proof = R1CSProof::deserialize(&mut cursor);
+        let proof = R1CSProof::<G>::deserialize(&mut cursor);
         if proof.is_ok() {
             Ok(proof.unwrap())
         } else {

@@ -12,25 +12,23 @@ impl Fp320Parameters for FqParameters {}
 
 impl FftParameters for FqParameters {
     type BigInt = BigInteger320;
-    const TWO_ADICITY: u32 = 1;
-
-    #[rustfmt::skip]
+    const TWO_ADICITY: u32 = 5;
     const TWO_ADIC_ROOT_OF_UNITY: Self::BigInt = BigInt::new([
+        0x717a2e0ee59a4753,
+        0xde10faf65209112d,
+        0x10af959a36aaede3,
+        0xdeed3dfd517127a6,
         0x0,
-        0x51bf8b26ea50fecb,
-        0x36890df020c720aa,
-        0x1,
-        0x0
     ]);
 }
 
 impl FpParameters for FqParameters {
-    /// MODULUS = 0x10000000000000000000000000000000136890df020c720aa51bf8b26ea50fecb
-    ///         = 115792089237316195423570985008687907853682756971699735333147980285963064639179
+    /// MODULUS = 0x1000000000000000000000000000000011225471b50b8dc249e5ff726d4163f21
+    ///         = 115792089237316195423570985008687907853634386693684621307141857813043191627553
     #[rustfmt::skip]
     const MODULUS: BigInteger320 = BigInt::new([
-        0x51bf8b26ea50fecb,
-        0x36890df020c720aa,
+        0x9e5ff726d4163f21,
+        0x1225471b50b8dc24,
         0x1,
         0x0,
         0x1,
@@ -46,84 +44,85 @@ impl FpParameters for FqParameters {
     /// `R = M % Self::MODULUS`.
     ///
     /// `M = 2^{320}`.
-    /// `R = 115792089237316195415956679918099464547703365549502005605056193841816235212491`.
+    /// `R = 115792089237316195416848954057418452620234596290110572286728859095508377288481`.
     #[rustfmt::skip]
     const R: BigInteger320 = BigInt::new([
-        0x51bf8b26ea50fecb,
-        0xe4c982c9367621df,
-        0xc976f20fdf38df56,
+        0x9e5ff726d4163f21,
+        0x73c54ff47ca29d03,
+        0xeddab8e4af4723dc,
         0xfffffffffffffffe,
         0x0,
     ]);
 
     /// `R2 = R^2 % Self::MODULUS`.
-    /// `R2 = 87952144448814991120222238096332847185353731516343235297673570405716810602274`.
+    /// `R2 = 17637168485989770643912989497113284166853135771825827723165605189791855617662`.
     #[rustfmt::skip]
     const R2: BigInteger320 = BigInt::new([
-        0xe9888ad928dd1722,
-        0x480ea40f640555f2,
-        0x191fdd0a884fadd3,
-        0xc273264f8e930969,
+        0x0618128ae993267e,
+        0x65320f396a714a82,
+        0xc995acd78b45c22e,
+        0x26fe489a4a187c74,
         0x0,
     ]);
 
     /// `INV = -MODULUS^{-1} mod 2^64`.
-    /// `INV = 1856915940073670941`.
-    const INV: u64 = 0x19c5173589da091d;
+    /// `INV = 11857564640349911839`.
+    const INV: u64 = 0xa48e88376149fb1f;
 
-    /// GENERATOR = 2
+    /// GENERATOR = 5
     /// Encoded in Montgomery form, so the value here is
-    /// `2 * R % q = 115792089237316195408342374827511021241723974127304275876964407397669405785803`
+    /// `5 * R % q = 115792089237316195389960830252340631686635434675814376205076864225369119932193`
     #[rustfmt::skip]
     const GENERATOR: BigInteger320 = BigInt::new([
-        0x51bf8b26ea50fecb,
-        0x9309f7a24c252314,
-        0x92ede41fbe71beac,
-        0xfffffffffffffffd,
+        0x9e5ff726d4163f21,
+        0xfa4573592c49a07f,
+        0xa5459c776c63b349,
+        0xfffffffffffffffa,
         0x0,
     ]);
 
     #[rustfmt::skip]
-    /// `57896044618658097711785492504343953926841378485849867666573990142981532319589`
+    /// `57896044618658097711785492504343953926817193346842310653570928906521595813776`
     const MODULUS_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0x28dfc59375287f65,
-        0x9b4486f810639055,
+        0x4f2ffb936a0b1f90,
+        0x8912a38da85c6e12,
         0x0,
         0x8000000000000000,
-        0x0,
+        0x0
     ]);
 
     /// T and T_MINUS_ONE_DIV_TWO, where `MODULUS - 1 = 2^S * T`
     /// For T coprime to 2
     ///
-    /// In our case, `S = 1`.
+    /// In our case, `S = 5`.
     ///
     /// `T = (MODULUS - 1) / 2^S =`
-    /// `57896044618658097711785492504343953926841378485849867666573990142981532319589`
+    /// `3618502788666131106986593281521497120426074584177644415848183056657599738361`
+    ///
     #[rustfmt::skip]
     const T: BigInteger320 = BigInt::new([
-        0x28dfc59375287f65,
-        0x9b4486f810639055,
+        0x24f2ffb936a0b1f9,
+        0x08912a38da85c6e1,
         0x0,
-        0x8000000000000000,
+        0x0800000000000000,
         0x0,
     ]);
 
     /// `(T - 1) / 2 =`
-    /// `28948022309329048855892746252171976963420689242924933833286995071490766159794`
+    /// `1809251394333065553493296640760748560213037292088822207924091528328799869180`
     #[rustfmt::skip]
     const T_MINUS_ONE_DIV_TWO: BigInteger320 = BigInt::new([
-        0x946fe2c9ba943fb2,
-        0x4da2437c0831c82a,
+        0x92797fdc9b5058fc,
+        0x0448951c6d42e370,
         0x0,
-        0x4000000000000000,
-        0x0,
+        0x0400000000000000,
+        0x0
     ]);
 }
 
 #[cfg(test)]
 mod test {
-    use crate::curve::zorro::fq::Fq;
+    use crate::curve::canaan::fq::Fq;
     use ark_algebra_test_templates::fields::{field_test, primefield_test};
     use ark_ff::{Field, One, UniformRand, Zero};
     use ark_std::{
@@ -146,6 +145,8 @@ mod test {
 
     #[test]
     fn test_fq_add_assign() {
+        // Test associativity
+
         let mut rng = test_rng();
 
         for _ in 0..1000 {
