@@ -1,0 +1,32 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test (bulletproofs/)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+      CARGO_TERM_COLOR: always
+    strategy:
+      fail-fast: true
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-bulletproofs-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Test
+        run: |
+          cargo test
