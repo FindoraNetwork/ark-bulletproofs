@@ -511,7 +511,7 @@ impl<G: AffineCurve, T: BorrowMut<Transcript>> Verifier<G, T> {
             .collect();
 
         let r: G::ScalarField = <Transcript as TranscriptProtocol<G>>::challenge_scalar(
-            self.transcript.borrow_mut(),
+            &mut self.transcript.borrow_mut().clone(),
             b"r",
         );
 

@@ -25,11 +25,11 @@ impl ModelParameters for Parameters {
 }
 
 impl TEModelParameters for Parameters {
-    /// COEFF_A = 973328/2 
+    /// COEFF_A = 973328/2
     ///         = 486664
     const COEFF_A: Fq = field_new!(Fq, "486664");
 
-    /// COEFF_D = 973320/2 
+    /// COEFF_D = 973320/2
     ///         = 486660
     const COEFF_D: Fq = field_new!(Fq, "486660");
 
