@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm, AffineCurve};
-use ark_ff::{Field, PrimeField, UniformRand};
+use ark_ec::{AffineRepr, VariableBaseMSM};
+use ark_ff::{Field, UniformRand};
 use ark_std::{
     borrow::BorrowMut,
     iter, mem,
@@ -28,7 +28,7 @@ use crate::transcript::TranscriptProtocol;
 /// When all constraints are added, the verifying code calls `verify`
 /// which consumes the `Verifier` instance, samples random challenges
 /// that instantiate the randomized constraints, and verifies the proof.
-pub struct Verifier<G: AffineCurve, T: BorrowMut<Transcript>> {
+pub struct Verifier<G: AffineRepr, T: BorrowMut<Transcript>> {
     transcript: T,
     constraints: Vec<LinearCombination<G::ScalarField>>,
 
@@ -59,11 +59,11 @@ pub struct Verifier<G: AffineCurve, T: BorrowMut<Transcript>> {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingVerifier<G: AffineCurve, T: BorrowMut<Transcript>> {
+pub struct RandomizingVerifier<G: AffineRepr, T: BorrowMut<Transcript>> {
     verifier: Verifier<G, T>,
 }
 
-impl<T: BorrowMut<Transcript>, G: AffineCurve> ConstraintSystem<G::ScalarField> for Verifier<G, T> {
+impl<T: BorrowMut<Transcript>, G: AffineRepr> ConstraintSystem<G::ScalarField> for Verifier<G, T> {
     fn transcript(&mut self) -> &mut Transcript {
         self.transcript.borrow_mut()
     }
@@ -146,7 +146,7 @@ impl<T: BorrowMut<Transcript>, G: AffineCurve> ConstraintSystem<G::ScalarField> 
     }
 }
 
-impl<T: BorrowMut<Transcript>, G: AffineCurve> RandomizableConstraintSystem<G::ScalarField>
+impl<T: BorrowMut<Transcript>, G: AffineRepr> RandomizableConstraintSystem<G::ScalarField>
     for Verifier<G, T>
 {
     type RandomizedCS = RandomizingVerifier<G, T>;
@@ -160,7 +160,7 @@ impl<T: BorrowMut<Transcript>, G: AffineCurve> RandomizableConstraintSystem<G::S
     }
 }
 
-impl<T: BorrowMut<Transcript>, G: AffineCurve> ConstraintSystem<G::ScalarField>
+impl<T: BorrowMut<Transcript>, G: AffineRepr> ConstraintSystem<G::ScalarField>
     for RandomizingVerifier<G, T>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -209,7 +209,7 @@ impl<T: BorrowMut<Transcript>, G: AffineCurve> ConstraintSystem<G::ScalarField>
     }
 }
 
-impl<T: BorrowMut<Transcript>, G: AffineCurve> RandomizedConstraintSystem<G::ScalarField>
+impl<T: BorrowMut<Transcript>, G: AffineRepr> RandomizedConstraintSystem<G::ScalarField>
     for RandomizingVerifier<G, T>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> G::ScalarField {
@@ -220,7 +220,7 @@ impl<T: BorrowMut<Transcript>, G: AffineCurve> RandomizedConstraintSystem<G::Sca
     }
 }
 
-impl<G: AffineCurve, T: BorrowMut<Transcript>> Verifier<G, T> {
+impl<G: AffineRepr, T: BorrowMut<Transcript>> Verifier<G, T> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -568,7 +568,7 @@ impl<G: AffineCurve, T: BorrowMut<Transcript>> Verifier<G, T> {
 
         let padded_n = self.num_vars.next_power_of_two();
 
-        let mega_check = msm::VariableBase::msm(
+        let mega_check = G::Group::msm(
             &iter::once(&pc_gens.B)
                 .chain(iter::once(&pc_gens.B_blinding))
                 .chain(gens.G(padded_n))
@@ -585,11 +585,9 @@ impl<G: AffineCurve, T: BorrowMut<Transcript>> Verifier<G, T> {
                 .chain(proof.ipp_proof.R_vec.iter())
                 .map(|f| f.clone())
                 .collect::<Vec<G>>(),
-            &scalars
-                .iter()
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
-        );
+            &scalars,
+        )
+        .unwrap();
 
         if !mega_check.is_zero() {
             return Err(R1CSError::VerificationError);
@@ -600,7 +598,7 @@ impl<G: AffineCurve, T: BorrowMut<Transcript>> Verifier<G, T> {
 }
 
 /// Batch verification of R1CS proofs
-pub fn batch_verify<'a, G: AffineCurve, I, R: CryptoRng + RngCore>(
+pub fn batch_verify<'a, G: AffineRepr, I, R: CryptoRng + RngCore>(
     prng: &mut R,
     instances: I,
     pc_gens: &PedersenGens<G>,
@@ -681,13 +679,7 @@ where
         all_elems.extend_from_slice(&proof.ipp_proof.R_vec);
     }
 
-    let multi_exp = msm::VariableBase::msm(
-        &all_elems,
-        &all_scalars
-            .iter()
-            .map(|f| f.into_repr())
-            .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
-    );
+    let multi_exp = G::Group::msm(&all_elems, &all_scalars).unwrap();
     if !multi_exp.is_zero() {
         Err(R1CSError::VerificationError)
     } else {

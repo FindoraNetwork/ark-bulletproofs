@@ -2,9 +2,9 @@
 //! Definition of the proof struct.
 
 use crate::{errors::R1CSError, inner_product_proof::InnerProductProof, ProofError};
-use ark_ec::AffineCurve;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
-use ark_std::io::{Cursor, Read, Write};
+use ark_ec::AffineRepr;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_std::io::Cursor;
 
 /// A proof of some statement specified by a
 /// [`ConstraintSystem`](::r1cs::ConstraintSystem).
@@ -24,7 +24,7 @@ use ark_std::io::{Cursor, Read, Write};
 /// proof.
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 #[allow(non_snake_case)]
-pub struct R1CSProof<G: AffineCurve> {
+pub struct R1CSProof<G: AffineRepr> {
     /// Commitment to the values of input wires in the first phase.
     pub(super) A_I1: G,
     /// Commitment to the values of output wires in the first phase.
@@ -58,7 +58,7 @@ pub struct R1CSProof<G: AffineCurve> {
     pub(super) ipp_proof: InnerProductProof<G>,
 }
 
-impl<G: AffineCurve> R1CSProof<G> {
+impl<G: AffineRepr> R1CSProof<G> {
     /// Serializes the proof into a byte array of 1 version byte + \\((13 or 16) + 2k\\) 32-byte elements,
     /// where \\(k=\lceil \log_2(n) \rceil\\) and \\(n\\) is the number of multiplication gates.
     ///
@@ -73,7 +73,7 @@ impl<G: AffineCurve> R1CSProof<G> {
     /// * two scalars \\(a, b\\).
     pub fn to_bytes(&self) -> Result<Vec<u8>, ProofError> {
         let mut cursor = Cursor::new(Vec::new());
-        self.serialize(&mut cursor)?;
+        self.serialize_compressed(&mut cursor)?;
         Ok(cursor.into_inner())
     }
 
@@ -82,7 +82,7 @@ impl<G: AffineCurve> R1CSProof<G> {
     /// Returns an error if the byte slice cannot be parsed into a `R1CSProof`.
     pub fn from_bytes(slice: &[u8]) -> Result<R1CSProof<G>, R1CSError> {
         let mut cursor = Cursor::new(slice);
-        let proof = R1CSProof::<G>::deserialize(&mut cursor);
+        let proof = R1CSProof::<G>::deserialize_compressed(&mut cursor);
         if proof.is_ok() {
             Ok(proof.unwrap())
         } else {

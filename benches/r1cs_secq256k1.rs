@@ -20,16 +20,16 @@ extern crate ark_bulletproofs;
 extern crate merlin;
 extern crate rand;
 
-use ark_bulletproofs::curve::secq256k1::{Fr, G1Affine};
 use ark_bulletproofs::r1cs::*;
 use ark_bulletproofs::{BulletproofGens, PedersenGens};
+use ark_secq256k1::{Affine, Fr};
 use merlin::Transcript;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
-struct ShuffleProof(R1CSProof<G1Affine>);
+struct ShuffleProof(R1CSProof<Affine>);
 
 impl ShuffleProof {
     fn gadget<CS: RandomizableConstraintSystem<Fr>>(
@@ -80,12 +80,12 @@ impl ShuffleProof {
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
     pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
         prng: &mut R,
-        pc_gens: &'b PedersenGens<G1Affine>,
-        bp_gens: &'b BulletproofGens<G1Affine>,
+        pc_gens: &'b PedersenGens<Affine>,
+        bp_gens: &'b BulletproofGens<Affine>,
         transcript: &'a mut Transcript,
         input: &[Fr],
         output: &[Fr],
-    ) -> Result<(ShuffleProof, Vec<G1Affine>, Vec<G1Affine>), R1CSError> {
+    ) -> Result<(ShuffleProof, Vec<Affine>, Vec<Affine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();
@@ -116,11 +116,11 @@ impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
     pub fn verify<'a, 'b>(
         &self,
-        pc_gens: &'b PedersenGens<G1Affine>,
-        bp_gens: &'b BulletproofGens<G1Affine>,
+        pc_gens: &'b PedersenGens<Affine>,
+        bp_gens: &'b BulletproofGens<Affine>,
         transcript: &'a mut Transcript,
-        input_commitments: &Vec<G1Affine>,
-        output_commitments: &Vec<G1Affine>,
+        input_commitments: &Vec<Affine>,
+        output_commitments: &Vec<Affine>,
     ) -> Result<(), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?

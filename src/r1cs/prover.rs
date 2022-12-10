@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm, AffineCurve, ProjectiveCurve};
-use ark_ff::{to_bytes, Field, PrimeField, UniformRand};
+use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
+use ark_ff::{Field, PrimeField, UniformRand};
+use ark_serialize::CanonicalSerialize;
 use ark_std::{borrow::BorrowMut, mem, One, Zero};
 use clear_on_drop::clear::Clear;
 use merlin::Transcript;
@@ -26,7 +27,7 @@ use crate::transcript::TranscriptProtocol;
 /// When all constraints are added, the proving code calls `prove`
 /// which consumes the `Prover` instance, samples random challenges
 /// that instantiate the randomized constraints, and creates a complete proof.
-pub struct Prover<'g, G: AffineCurve, T: BorrowMut<Transcript>> {
+pub struct Prover<'g, G: AffineRepr, T: BorrowMut<Transcript>> {
     transcript: T,
     pc_gens: &'g PedersenGens<G>,
     /// The constraints accumulated so far.
@@ -45,7 +46,7 @@ pub struct Prover<'g, G: AffineCurve, T: BorrowMut<Transcript>> {
 
 /// Separate struct to implement Drop trait for (for zeroing),
 /// so that compiler does not prohibit us from moving the Transcript out of `prove()`.
-struct Secrets<G: AffineCurve> {
+struct Secrets<G: AffineRepr> {
     /// Stores assignments to the "left" of multiplication gates
     a_L: Vec<G::ScalarField>,
     /// Stores assignments to the "right" of multiplication gates
@@ -65,12 +66,12 @@ struct Secrets<G: AffineCurve> {
 /// monomorphize the closures for the proving and verifying code.
 /// However, this type cannot be instantiated by the user and therefore can only be used within
 /// the callback provided to `specify_randomized_constraints`.
-pub struct RandomizingProver<'g, G: AffineCurve, T: BorrowMut<Transcript>> {
+pub struct RandomizingProver<'g, G: AffineRepr, T: BorrowMut<Transcript>> {
     prover: Prover<'g, G, T>,
 }
 
 /// Overwrite secrets with null bytes when they go out of scope.
-impl<G: AffineCurve> Drop for Secrets<G> {
+impl<G: AffineRepr> Drop for Secrets<G> {
     fn drop(&mut self) {
         self.v.clear();
         self.v_blinding.clear();
@@ -92,7 +93,7 @@ impl<G: AffineCurve> Drop for Secrets<G> {
     }
 }
 
-impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
+impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
     for Prover<'g, G, T>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -192,7 +193,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarFie
     }
 }
 
-impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizableConstraintSystem<G::ScalarField>
+impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> RandomizableConstraintSystem<G::ScalarField>
     for Prover<'g, G, T>
 {
     type RandomizedCS = RandomizingProver<'g, G, T>;
@@ -206,7 +207,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizableConstraintSystem<
     }
 }
 
-impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
+impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarField>
     for RandomizingProver<'g, G, T>
 {
     fn transcript(&mut self) -> &mut Transcript {
@@ -255,7 +256,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> ConstraintSystem<G::ScalarFie
     }
 }
 
-impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizedConstraintSystem<G::ScalarField>
+impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> RandomizedConstraintSystem<G::ScalarField>
     for RandomizingProver<'g, G, T>
 {
     fn challenge_scalar(&mut self, label: &'static [u8]) -> G::ScalarField {
@@ -266,7 +267,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> RandomizedConstraintSystem<G:
     }
 }
 
-impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
+impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> Prover<'g, G, T> {
     /// Construct an empty constraint system with specified external
     /// input variables.
     ///
@@ -484,7 +485,9 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
 
             // Commit the blinding factors for the input wires
             for v_b in &self.secrets.v_blinding {
-                builder = builder.rekey_with_witness_bytes(b"v_blinding", &to_bytes!(v_b).unwrap());
+                let mut bytes = Vec::new();
+                v_b.serialize_uncompressed(&mut bytes).unwrap();
+                builder = builder.rekey_with_witness_bytes(b"v_blinding", &bytes);
             }
 
             builder.finalize(prng)
@@ -510,7 +513,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
             (0..n1).map(|_| G::ScalarField::rand(&mut rng)).collect();
 
         // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
-        let A_I1 = msm::VariableBase::msm(
+        let A_I1 = G::Group::msm(
             &iter::once(&self.pc_gens.B_blinding)
                 .chain(gens.G(n1))
                 .chain(gens.H(n1))
@@ -519,26 +522,28 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
             &iter::once(&i_blinding1)
                 .chain(self.secrets.a_L.iter())
                 .chain(self.secrets.a_R.iter())
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                .map(|f| *f)
+                .collect::<Vec<G::ScalarField>>(),
         )
+        .unwrap()
         .into_affine();
 
         // A_O = <a_O, G> + o_blinding * B_blinding
-        let A_O1 = msm::VariableBase::msm(
+        let A_O1 = G::Group::msm(
             &iter::once(&self.pc_gens.B_blinding)
                 .chain(gens.G(n1))
                 .map(|f| f.clone())
                 .collect::<Vec<G>>(),
             &iter::once(&o_blinding1)
                 .chain(self.secrets.a_O.iter())
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                .map(|f| *f)
+                .collect::<Vec<G::ScalarField>>(),
         )
+        .unwrap()
         .into_affine();
 
         // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-        let S1 = msm::VariableBase::msm(
+        let S1 = G::Group::msm(
             &iter::once(&self.pc_gens.B_blinding)
                 .chain(gens.G(n1))
                 .chain(gens.H(n1))
@@ -547,9 +552,10 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
             &iter::once(&s_blinding1)
                 .chain(s_L1.iter())
                 .chain(s_R1.iter())
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                .map(|f| *f)
+                .collect::<Vec<G::ScalarField>>(),
         )
+        .unwrap()
         .into_affine();
 
         let transcript = self.transcript.borrow_mut();
@@ -598,7 +604,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
         let (A_I2, A_O2, S2) = if has_2nd_phase_commitments {
             (
                 // A_I = <a_L, G> + <a_R, H> + i_blinding * B_blinding
-                msm::VariableBase::msm(
+                G::Group::msm(
                     &iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
@@ -607,24 +613,26 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
                     &iter::once(&i_blinding2)
                         .chain(self.secrets.a_L.iter().skip(n1))
                         .chain(self.secrets.a_R.iter().skip(n1))
-                        .map(|f| f.into_repr())
-                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                        .map(|f| *f)
+                        .collect::<Vec<G::ScalarField>>(),
                 )
+                .unwrap()
                 .into_affine(),
                 // A_O = <a_O, G> + o_blinding * B_blinding
-                msm::VariableBase::msm(
+                G::Group::msm(
                     &iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .map(|f| f.clone())
                         .collect::<Vec<G>>(),
                     &iter::once(&o_blinding2)
                         .chain(self.secrets.a_O.iter().skip(n1))
-                        .map(|f| f.into_repr())
-                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                        .map(|f| *f)
+                        .collect::<Vec<G::ScalarField>>(),
                 )
+                .unwrap()
                 .into_affine(),
                 // S = <s_L, G> + <s_R, H> + s_blinding * B_blinding
-                msm::VariableBase::msm(
+                G::Group::msm(
                     &iter::once(&self.pc_gens.B_blinding)
                         .chain(gens.G(n).skip(n1))
                         .chain(gens.H(n).skip(n1))
@@ -633,9 +641,10 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
                     &iter::once(&s_blinding2)
                         .chain(s_L2.iter())
                         .chain(s_R2.iter())
-                        .map(|f| f.into_repr())
-                        .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>(),
+                        .map(|f| *f)
+                        .collect::<Vec<G::ScalarField>>(),
                 )
+                .unwrap()
                 .into_affine(),
             )
         } else {
@@ -767,7 +776,7 @@ impl<'g, G: AffineCurve, T: BorrowMut<Transcript>> Prover<'g, G, T> {
         // Get a challenge value to combine statements for the IPP
         let w: G::ScalarField =
             <Transcript as TranscriptProtocol<G>>::challenge_scalar(transcript, b"w");
-        let Q = self.pc_gens.B.mul(w.into_repr());
+        let Q = self.pc_gens.B.mul_bigint(w.into_bigint());
 
         let G_factors = iter::repeat(G::ScalarField::one())
             .take(n1)
