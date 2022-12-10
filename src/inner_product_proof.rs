@@ -1,11 +1,10 @@
 #![allow(non_snake_case)]
 
-use ark_ec::{msm, AffineCurve, ProjectiveCurve};
+use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{batch_inversion, Field, One, PrimeField, Zero};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     borrow::Borrow,
-    io::{Read, Write},
     iter,
     ops::{MulAssign, Neg},
     vec::Vec,
@@ -16,14 +15,14 @@ use crate::errors::ProofError;
 use crate::transcript::TranscriptProtocol;
 
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
-pub struct InnerProductProof<G: AffineCurve> {
+pub struct InnerProductProof<G: AffineRepr> {
     pub(crate) L_vec: Vec<G>,
     pub(crate) R_vec: Vec<G>,
     pub(crate) a: G::ScalarField,
     pub(crate) b: G::ScalarField,
 }
 
-impl<G: AffineCurve> InnerProductProof<G> {
+impl<G: AffineRepr> InnerProductProof<G> {
     /// Create an inner-product proof.
     ///
     /// The proof is created with respect to the bases \\(G\\), \\(H'\\),
@@ -100,10 +99,9 @@ impl<G: AffineCurve> InnerProductProof<G> {
                         .map(|(b_R_i, h)| *b_R_i * h),
                 )
                 .chain(iter::once(c_L))
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>();
+                .collect::<Vec<G::ScalarField>>();
 
-            let L = msm::VariableBase::msm(&bases, &scalars);
+            let L = G::Group::msm(&bases, &scalars).unwrap();
 
             let bases = G_L
                 .iter()
@@ -121,10 +119,9 @@ impl<G: AffineCurve> InnerProductProof<G> {
                         .map(|(b_L_i, h)| *b_L_i * h),
                 )
                 .chain(iter::once(c_R))
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>();
+                .collect::<Vec<G::ScalarField>>();
 
-            let R = msm::VariableBase::msm(&bases, &scalars);
+            let R = G::Group::msm(&bases, &scalars).unwrap();
 
             let L = L.into_affine();
             let R = R.into_affine();
@@ -143,22 +140,18 @@ impl<G: AffineCurve> InnerProductProof<G> {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
 
-                G_L[i] = msm::VariableBase::msm(
+                G_L[i] = G::Group::msm(
                     &[G_L[i], G_R[i]],
-                    &[
-                        (u_inv * G_factors[i]).into_repr(),
-                        (u * G_factors[n + i]).into_repr(),
-                    ],
+                    &[u_inv * G_factors[i], u * G_factors[n + i]],
                 )
+                .unwrap()
                 .into_affine();
 
-                H_L[i] = msm::VariableBase::msm(
+                H_L[i] = G::Group::msm(
                     &[H_L[i], H_R[i]],
-                    &[
-                        (u * H_factors[i]).into_repr(),
-                        (u_inv * H_factors[n + i]).into_repr(),
-                    ],
+                    &[u * H_factors[i], u_inv * H_factors[n + i]],
                 )
+                .unwrap()
                 .into_affine();
             }
 
@@ -188,10 +181,10 @@ impl<G: AffineCurve> InnerProductProof<G> {
                 .iter()
                 .chain(b_R.iter())
                 .chain(iter::once(&c_L))
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>();
+                .map(|f| *f)
+                .collect::<Vec<G::ScalarField>>();
 
-            let L = msm::VariableBase::msm(&bases, &scalars);
+            let L = G::Group::msm(&bases, &scalars).unwrap();
 
             let bases = G_L
                 .iter()
@@ -203,10 +196,10 @@ impl<G: AffineCurve> InnerProductProof<G> {
                 .iter()
                 .chain(b_L.iter())
                 .chain(iter::once(&c_R))
-                .map(|f| f.into_repr())
-                .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>();
+                .map(|f| *f)
+                .collect::<Vec<G::ScalarField>>();
 
-            let R = msm::VariableBase::msm(&bases, &scalars);
+            let R = G::Group::msm(&bases, &scalars).unwrap();
 
             let L = L.into_affine();
             let R = R.into_affine();
@@ -223,12 +216,12 @@ impl<G: AffineCurve> InnerProductProof<G> {
             for i in 0..n {
                 a_L[i] = a_L[i] * u + u_inv * a_R[i];
                 b_L[i] = b_L[i] * u_inv + u * b_R[i];
-                G_L[i] =
-                    msm::VariableBase::msm(&[G_L[i], G_R[i]], &[u_inv.into_repr(), u.into_repr()])
-                        .into_affine();
-                H_L[i] =
-                    msm::VariableBase::msm(&[H_L[i], H_R[i]], &[u.into_repr(), u_inv.into_repr()])
-                        .into_affine()
+                G_L[i] = G::Group::msm(&[G_L[i], G_R[i]], &[u_inv, u])
+                    .unwrap()
+                    .into_affine();
+                H_L[i] = G::Group::msm(&[H_L[i], H_R[i]], &[u, u_inv])
+                    .unwrap()
+                    .into_affine()
             }
 
             a = a_L;
@@ -238,8 +231,8 @@ impl<G: AffineCurve> InnerProductProof<G> {
         }
 
         InnerProductProof {
-            L_vec: L_vec,
-            R_vec: R_vec,
+            L_vec,
+            R_vec,
             a: a[0],
             b: b[0],
         }
@@ -377,10 +370,9 @@ impl<G: AffineCurve> InnerProductProof<G> {
             .chain(h_times_b_div_s)
             .chain(neg_u_sq)
             .chain(neg_u_inv_sq)
-            .map(|f| f.into_repr())
-            .collect::<Vec<<G::ScalarField as PrimeField>::BigInt>>();
+            .collect::<Vec<G::ScalarField>>();
 
-        let expect_P = msm::VariableBase::msm(&bases, &scalars).into_affine();
+        let expect_P = G::Group::msm(&bases, &scalars).unwrap().into_affine();
 
         if expect_P == *P {
             Ok(())
@@ -417,7 +409,7 @@ mod tests {
     use sha3::Sha3_512;
 
     fn test_helper_create(n: usize) {
-        type G = crate::curve::secq256k1::G1Affine;
+        type G = ark_secq256k1::Affine;
 
         let mut rng = rand::thread_rng();
 
@@ -442,21 +434,21 @@ mod tests {
 
         // a and b are the vectors for which we want to prove c = <a,b>
         let a: Vec<_> = (0..n)
-            .map(|_| <G as AffineCurve>::ScalarField::rand(&mut rng))
+            .map(|_| <G as AffineRepr>::ScalarField::rand(&mut rng))
             .collect();
         let b: Vec<_> = (0..n)
-            .map(|_| <G as AffineCurve>::ScalarField::rand(&mut rng))
+            .map(|_| <G as AffineRepr>::ScalarField::rand(&mut rng))
             .collect();
         let c = inner_product(&a, &b);
 
-        let G_factors: Vec<<G as AffineCurve>::ScalarField> =
-            iter::repeat(<G as AffineCurve>::ScalarField::one())
+        let G_factors: Vec<<G as AffineRepr>::ScalarField> =
+            iter::repeat(<G as AffineRepr>::ScalarField::one())
                 .take(n)
                 .collect();
 
         // y_inv is (the inverse of) a random challenge
-        let y_inv = <G as AffineCurve>::ScalarField::rand(&mut rng);
-        let H_factors: Vec<<G as AffineCurve>::ScalarField> =
+        let y_inv = <G as AffineRepr>::ScalarField::rand(&mut rng);
+        let H_factors: Vec<<G as AffineRepr>::ScalarField> =
             util::exp_iter::<G>(y_inv).take(n).collect();
 
         // P would be determined upstream, but we need a correct P to check the proof.
@@ -480,10 +472,11 @@ mod tests {
         let scalars = a_prime
             .chain(b_prime)
             .chain(iter::once(c))
-            .map(|f| f.into_repr())
-            .collect::<Vec<<<G as AffineCurve>::ScalarField as PrimeField>::BigInt>>();
+            .collect::<Vec<<G as AffineRepr>::ScalarField>>();
 
-        let P = msm::VariableBase::msm(&bases, &scalars).into_affine();
+        let P = <G as AffineRepr>::Group::msm(&bases, &scalars)
+            .unwrap()
+            .into_affine();
 
         let mut verifier = Transcript::new(b"innerproducttest");
         let proof = InnerProductProof::create(
@@ -502,7 +495,7 @@ mod tests {
             .verify(
                 n,
                 &mut verifier,
-                iter::repeat(<G as AffineCurve>::ScalarField::one()).take(n),
+                iter::repeat(<G as AffineRepr>::ScalarField::one()).take(n),
                 util::exp_iter::<G>(y_inv).take(n),
                 &P,
                 &Q,
@@ -513,18 +506,18 @@ mod tests {
 
         let bytes = {
             let mut cursor = Cursor::new(Vec::<u8>::new());
-            proof.serialize(&mut cursor).unwrap();
+            proof.serialize_compressed(&mut cursor).unwrap();
             cursor.into_inner()
         };
         let mut cursor = Cursor::new(bytes);
-        let proof = InnerProductProof::deserialize(&mut cursor).unwrap();
+        let proof = InnerProductProof::deserialize_compressed(&mut cursor).unwrap();
 
         let mut verifier = Transcript::new(b"innerproducttest");
         assert!(proof
             .verify(
                 n,
                 &mut verifier,
-                iter::repeat(<G as AffineCurve>::ScalarField::one()).take(n),
+                iter::repeat(<G as AffineRepr>::ScalarField::one()).take(n),
                 util::exp_iter::<G>(y_inv).take(n),
                 &P,
                 &Q,
@@ -561,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_inner_product() {
-        type F = crate::curve::secp256k1::Fr;
+        type F = ark_secp256k1::Fr;
 
         let a = vec![F::from(1u64), F::from(2u64), F::from(3u64), F::from(4u64)];
         let b = vec![F::from(2u64), F::from(3u64), F::from(4u64), F::from(5u64)];

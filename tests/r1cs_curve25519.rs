@@ -1,10 +1,7 @@
 #![allow(non_snake_case)]
 
-use ark_bulletproofs::{
-    curve::curve25519::{Fr, G1Affine},
-    r1cs::*,
-    BulletproofGens, PedersenGens,
-};
+use ark_bulletproofs::{r1cs::*, BulletproofGens, PedersenGens};
+use ark_curve25519::{EdwardsAffine, Fr};
 use ark_ff::UniformRand;
 use ark_std::rand::seq::SliceRandom;
 use ark_std::rand::thread_rng;
@@ -13,7 +10,7 @@ use merlin::Transcript;
 use rand_core::{CryptoRng, RngCore};
 
 /// A proof-of-shuffle.
-struct ShuffleProof(R1CSProof<G1Affine>);
+struct ShuffleProof(R1CSProof<EdwardsAffine>);
 
 impl ShuffleProof {
     fn gadget<CS: RandomizableConstraintSystem<Fr>>(
@@ -64,12 +61,12 @@ impl ShuffleProof {
     /// Returns a tuple `(proof, input_commitments || output_commitments)`.
     pub fn prove<'a, 'b, R: CryptoRng + RngCore>(
         prng: &mut R,
-        pc_gens: &'b PedersenGens<G1Affine>,
-        bp_gens: &'b BulletproofGens<G1Affine>,
+        pc_gens: &'b PedersenGens<EdwardsAffine>,
+        bp_gens: &'b BulletproofGens<EdwardsAffine>,
         transcript: &'a mut Transcript,
         input: &[Fr],
         output: &[Fr],
-    ) -> Result<(ShuffleProof, Vec<G1Affine>, Vec<G1Affine>), R1CSError> {
+    ) -> Result<(ShuffleProof, Vec<EdwardsAffine>, Vec<EdwardsAffine>), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
         let k = input.len();
@@ -100,11 +97,11 @@ impl ShuffleProof {
     /// Attempt to verify a `ShuffleProof`.
     pub fn verify<'a, 'b>(
         &self,
-        pc_gens: &'b PedersenGens<G1Affine>,
-        bp_gens: &'b BulletproofGens<G1Affine>,
+        pc_gens: &'b PedersenGens<EdwardsAffine>,
+        bp_gens: &'b BulletproofGens<EdwardsAffine>,
         transcript: &'a mut Transcript,
-        input_commitments: &Vec<G1Affine>,
-        output_commitments: &Vec<G1Affine>,
+        input_commitments: &Vec<EdwardsAffine>,
+        output_commitments: &Vec<EdwardsAffine>,
     ) -> Result<(), R1CSError> {
         // Apply a domain separator with the shuffle parameters to the transcript
         // XXX should this be part of the gadget?
@@ -233,15 +230,15 @@ fn example_gadget<CS: ConstraintSystem<Fr>>(
 
 // Prover's scope
 fn example_gadget_proof(
-    pc_gens: &PedersenGens<G1Affine>,
-    bp_gens: &BulletproofGens<G1Affine>,
+    pc_gens: &PedersenGens<EdwardsAffine>,
+    bp_gens: &BulletproofGens<EdwardsAffine>,
     a1: u64,
     a2: u64,
     b1: u64,
     b2: u64,
     c1: u64,
     c2: u64,
-) -> Result<(R1CSProof<G1Affine>, Vec<G1Affine>), R1CSError> {
+) -> Result<(R1CSProof<EdwardsAffine>, Vec<EdwardsAffine>), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
     let mut rng = thread_rng();
 
@@ -273,11 +270,11 @@ fn example_gadget_proof(
 
 // Verifier logic
 fn example_gadget_verify(
-    pc_gens: &PedersenGens<G1Affine>,
-    bp_gens: &BulletproofGens<G1Affine>,
+    pc_gens: &PedersenGens<EdwardsAffine>,
+    bp_gens: &BulletproofGens<EdwardsAffine>,
     c2: u64,
-    proof: R1CSProof<G1Affine>,
-    commitments: Vec<G1Affine>,
+    proof: R1CSProof<EdwardsAffine>,
+    commitments: Vec<EdwardsAffine>,
 ) -> Result<(), R1CSError> {
     let mut transcript = Transcript::new(b"R1CSExampleGadget");
 
@@ -415,7 +412,7 @@ fn range_proof_gadget() {
 
 fn range_proof_helper(v_val: u64, n: usize) -> Result<(), R1CSError> {
     // Common
-    let pc_gens = PedersenGens::<G1Affine>::default();
+    let pc_gens = PedersenGens::<EdwardsAffine>::default();
     let bp_gens = BulletproofGens::new(128, 1);
 
     // Prover's scope
@@ -479,7 +476,7 @@ fn batch_range_proof_gadget() {
 
 fn batch_range_proof_helper(v_vals: &[(u64, usize)]) -> Result<(), R1CSError> {
     // Common
-    let pc_gens = PedersenGens::<G1Affine>::default();
+    let pc_gens = PedersenGens::<EdwardsAffine>::default();
     let bp_gens = BulletproofGens::new(128, 1);
 
     let mut proofs = vec![];

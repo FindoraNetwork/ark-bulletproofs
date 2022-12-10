@@ -1,7 +1,7 @@
 #![deny(missing_docs)]
 #![allow(non_snake_case)]
 
-use ark_ec::AffineCurve;
+use ark_ec::AffineRepr;
 use ark_std::{vec, vec::Vec, One, Zero};
 use clear_on_drop::clear::Clear;
 
@@ -10,7 +10,7 @@ use crate::inner_product_proof::inner_product;
 /// Represents a degree-3 vector polynomial
 /// \\(\mathbf{a} + \mathbf{b} \cdot x + \mathbf{c} \cdot x^2 + \mathbf{d} \cdot x^3 \\).
 #[cfg(feature = "yoloproofs")]
-pub struct VecPoly3<G: AffineCurve>(
+pub struct VecPoly3<G: AffineRepr>(
     pub Vec<G::ScalarField>,
     pub Vec<G::ScalarField>,
     pub Vec<G::ScalarField>,
@@ -20,7 +20,7 @@ pub struct VecPoly3<G: AffineCurve>(
 /// Represents a degree-6 scalar polynomial, without the zeroth degree
 /// \\(a \cdot x + b \cdot x^2 + c \cdot x^3 + d \cdot x^4 + e \cdot x^5 + f \cdot x^6\\)
 #[cfg(feature = "yoloproofs")]
-pub struct Poly6<G: AffineCurve> {
+pub struct Poly6<G: AffineRepr> {
     pub t1: G::ScalarField,
     pub t2: G::ScalarField,
     pub t3: G::ScalarField,
@@ -32,12 +32,12 @@ pub struct Poly6<G: AffineCurve> {
 /// Provides an iterator over the powers of a `Fr`.
 ///
 /// This struct is created by the `exp_iter` function.
-pub struct FrExp<G: AffineCurve> {
+pub struct FrExp<G: AffineRepr> {
     x: G::ScalarField,
     next_exp_x: G::ScalarField,
 }
 
-impl<G: AffineCurve> Iterator for FrExp<G> {
+impl<G: AffineRepr> Iterator for FrExp<G> {
     type Item = G::ScalarField;
 
     fn next(&mut self) -> Option<G::ScalarField> {
@@ -52,13 +52,13 @@ impl<G: AffineCurve> Iterator for FrExp<G> {
 }
 
 /// Return an iterator of the powers of `x`.
-pub fn exp_iter<G: AffineCurve>(x: G::ScalarField) -> FrExp<G> {
+pub fn exp_iter<G: AffineRepr>(x: G::ScalarField) -> FrExp<G> {
     let next_exp_x = G::ScalarField::one();
     FrExp { x, next_exp_x }
 }
 
 #[cfg(feature = "yoloproofs")]
-impl<G: AffineCurve> VecPoly3<G> {
+impl<G: AffineRepr> VecPoly3<G> {
     pub fn zero(n: usize) -> Self {
         VecPoly3(
             vec![G::ScalarField::zero(); n],
@@ -103,14 +103,14 @@ impl<G: AffineCurve> VecPoly3<G> {
 }
 
 #[cfg(feature = "yoloproofs")]
-impl<G: AffineCurve> Poly6<G> {
+impl<G: AffineRepr> Poly6<G> {
     pub fn eval(&self, x: G::ScalarField) -> G::ScalarField {
         x * (self.t1 + x * (self.t2 + x * (self.t3 + x * (self.t4 + x * (self.t5 + x * self.t6)))))
     }
 }
 
 #[cfg(feature = "yoloproofs")]
-impl<G: AffineCurve> Drop for VecPoly3<G> {
+impl<G: AffineRepr> Drop for VecPoly3<G> {
     fn drop(&mut self) {
         for e in self.0.iter_mut() {
             e.clear();
@@ -128,7 +128,7 @@ impl<G: AffineCurve> Drop for VecPoly3<G> {
 }
 
 #[cfg(feature = "yoloproofs")]
-impl<G: AffineCurve> Drop for Poly6<G> {
+impl<G: AffineRepr> Drop for Poly6<G> {
     fn drop(&mut self) {
         self.t1.clear();
         self.t2.clear();
@@ -145,8 +145,8 @@ mod tests {
 
     #[test]
     fn exp_2_is_powers_of_2() {
-        type G = crate::curve::secq256k1::G1Affine;
-        type F = crate::curve::secq256k1::Fr;
+        type G = ark_secq256k1::Affine;
+        type F = ark_secq256k1::Fr;
 
         let exp_2: Vec<_> = exp_iter::<G>(F::from(2u64)).take(4).collect();
 
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_inner_product() {
-        type F = crate::curve::secq256k1::Fr;
+        type F = ark_secq256k1::Fr;
 
         let a = vec![F::from(1u64), F::from(2u64), F::from(3u64), F::from(4u64)];
         let b = vec![F::from(2u64), F::from(3u64), F::from(4u64), F::from(5u64)];
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn vec_of_scalars_clear_on_drop() {
-        type F = crate::curve::secq256k1::Fr;
+        type F = ark_secq256k1::Fr;
 
         let mut v = vec![F::from(24u64), F::from(42u64)];
 
@@ -182,7 +182,7 @@ mod tests {
             unsafe { slice::from_raw_parts(x.as_ptr() as *const u8, mem::size_of_val(x)) }
         }
 
-        assert_eq!(flat_slice(&v.as_slice()), &[0u8; 80][..]);
+        assert_eq!(flat_slice(&v.as_slice()), &[0u8; 64][..]);
         assert_eq!(v[0], F::zero());
         assert_eq!(v[1], F::zero());
     }
