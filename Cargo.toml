@@ -86,10 +86,6 @@ required-features = ["yoloproofs"]
 name = "r1cs_zorro"
 required-features = ["yoloproofs"]
 
-[[test]]
-name = "r1cs_canaan"
-required-features = ["yoloproofs"]
-
 [[bench]]
 name = "generators"
 harness = false
@@ -101,11 +97,6 @@ required-features = ["yoloproofs"]
 
 [[bench]]
 name = "r1cs_zorro"
-harness = false
-required-features = ["yoloproofs"]
-
-[[bench]]
-name = "r1cs_canaan"
 harness = false
 required-features = ["yoloproofs"]
 
