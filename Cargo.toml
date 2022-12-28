@@ -1,12 +1,13 @@
 [package]
 name = "ark-bulletproofs"
-version = "2.0.0"
+version = "4.0.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
-           "Oleg Andreev <oleganza@gmail.com>"]
+           "Oleg Andreev <oleganza@gmail.com>",
+           "Discreet Labs <crypto@findora.org>"]
 readme = "README.md"
 license = "MIT"
-repository = "https://github.com/FindoraNetwork/bulletproofs-canaan"
+repository = "https://github.com/FindoraNetwork/ark-bulletproofs"
 categories = ["cryptography"]
 keywords = ["cryptography", "crypto", "ristretto", "zero-knowledge", "bulletproofs"]
 description = "A pure-Rust implementation of Bulletproofs using secq256k1 and zorro"
@@ -128,7 +129,3 @@ lto = "thin"
 incremental = true
 debug-assertions = true
 debug = true
-
-[patch.crates-io]
-ark-secp256k1 = { git = "https://github.com/arkworks-rs/curves" }
-ark-secq256k1 = { git = "https://github.com/arkworks-rs/curves" }
