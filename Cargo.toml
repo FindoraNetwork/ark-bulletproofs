@@ -44,11 +44,6 @@ version = '0.4.0-alpha'
 default-features = false
 features = ["derive"]
 
-[dependencies.ark-algebra-test-templates]
-version = '0.4.0-alpha'
-default-features = false
-features = ["std"]
-
 [dependencies.ark-secp256k1]
 version =  '0.4.0-alpha'
 default-features = false
@@ -72,6 +67,11 @@ features = ["std"]
 [dev-dependencies]
 criterion = "0.3"
 rand_chacha = "0.3"
+
+[dev-dependencies.ark-algebra-test-templates]
+version = '0.4.0-alpha'
+default-features = false
+features = ["std"]
 
 [features]
 default = ["std", "yoloproofs"]
