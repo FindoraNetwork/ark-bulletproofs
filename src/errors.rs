@@ -1,7 +1,10 @@
 //! Errors related to proving and verifying proofs.
 
 use ark_serialize::SerializationError;
-use ark_std::vec::Vec;
+use ark_std::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 #[cfg(feature = "std")]
 use thiserror::Error;

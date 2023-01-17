@@ -47,22 +47,18 @@ features = ["derive"]
 [dependencies.ark-secp256k1]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dependencies.ark-secq256k1]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dependencies.ark-ed25519]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dependencies.ark-curve25519]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dev-dependencies]
 criterion = "0.3"

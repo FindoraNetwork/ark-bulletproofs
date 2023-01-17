@@ -2,7 +2,7 @@
 
 use ark_ec::AffineRepr;
 use ark_serialize::CanonicalSerialize;
-use ark_std::{rand::SeedableRng, UniformRand};
+use ark_std::{rand::SeedableRng, vec::Vec, UniformRand};
 use merlin::Transcript;
 use rand_chacha::ChaChaRng;
 
