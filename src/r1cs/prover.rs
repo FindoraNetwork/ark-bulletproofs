@@ -3,7 +3,7 @@
 use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand};
 use ark_serialize::CanonicalSerialize;
-use ark_std::{borrow::BorrowMut, mem, One, Zero};
+use ark_std::{borrow::BorrowMut, boxed::Box, mem, vec, vec::Vec, One, Zero};
 use clear_on_drop::clear::Clear;
 use merlin::Transcript;
 use rand_core::{CryptoRng, RngCore};
@@ -457,7 +457,7 @@ impl<'g, G: AffineRepr, T: BorrowMut<Transcript>> Prover<'g, G, T> {
         bp_gens: &BulletproofGens<G>,
     ) -> Result<(R1CSProof<G>, T), R1CSError> {
         use crate::util;
-        use std::iter;
+        use ark_std::iter;
 
         // Commit a length _suffix_ for the number of high-level variables.
         // We cannot do this in advance because user can commit variables one-by-one,
