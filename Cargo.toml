@@ -21,7 +21,6 @@ rand = { version = "0.8", optional = true }
 byteorder = { version = "1", default-features = false }
 serde = { version = "1", default-features = false, features = ["alloc"] }
 serde_derive = { version = "1", default-features = false }
-thiserror = { version = "1", optional = true }
 merlin = { version = "3", default-features = false }
 clear_on_drop = { version = "0.2", features = ["no_cc"] }
 rand_chacha = "0.3"
@@ -73,7 +72,7 @@ features = ["std"]
 [features]
 default = ["std", "yoloproofs"]
 yoloproofs = []
-std = ["rand", "thiserror"]
+std = ["rand"]
 parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
 
 [[test]]
