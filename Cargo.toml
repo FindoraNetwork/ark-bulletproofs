@@ -1,6 +1,6 @@
 [package]
 name = "ark-bulletproofs"
-version = "4.0.0"
+version = "4.1.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
            "Oleg Andreev <oleganza@gmail.com>",
@@ -21,7 +21,6 @@ rand = { version = "0.8", optional = true }
 byteorder = { version = "1", default-features = false }
 serde = { version = "1", default-features = false, features = ["alloc"] }
 serde_derive = { version = "1", default-features = false }
-thiserror = { version = "1", optional = true }
 merlin = { version = "3", default-features = false }
 clear_on_drop = { version = "0.2", features = ["no_cc"] }
 rand_chacha = "0.3"
@@ -44,39 +43,36 @@ version = '0.4.0-alpha'
 default-features = false
 features = ["derive"]
 
-[dependencies.ark-algebra-test-templates]
-version = '0.4.0-alpha'
-default-features = false
-features = ["std"]
-
 [dependencies.ark-secp256k1]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dependencies.ark-secq256k1]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
 
 [dependencies.ark-ed25519]
 version =  '0.4.0-alpha'
 default-features = false
-features = ["std"]
-
-[dependencies.ark-curve25519]
-version =  '0.4.0-alpha'
-default-features = false
-features = ["std"]
 
 [dev-dependencies]
 criterion = "0.3"
 rand_chacha = "0.3"
 
+[dev-dependencies.ark-algebra-test-templates]
+version = '0.4.0-alpha'
+default-features = false
+features = ["std"]
+
+[dev-dependencies.ark-curve25519]
+version =  '0.4.0-alpha'
+default-features = false
+features = ["std"]
+
 [features]
 default = ["std", "yoloproofs"]
 yoloproofs = []
-std = ["rand", "thiserror"]
+std = ["rand"]
 parallel = ["ark-ec/parallel", "ark-ff/parallel", "ark-std/parallel"]
 
 [[test]]

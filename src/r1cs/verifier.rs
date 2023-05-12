@@ -4,8 +4,11 @@ use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::{Field, UniformRand};
 use ark_std::{
     borrow::BorrowMut,
+    boxed::Box,
     iter, mem,
     rand::{CryptoRng, RngCore},
+    vec,
+    vec::Vec,
     One, Zero,
 };
 use merlin::Transcript;

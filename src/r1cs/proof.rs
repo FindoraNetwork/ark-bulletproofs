@@ -4,7 +4,7 @@
 use crate::{errors::R1CSError, inner_product_proof::InnerProductProof, ProofError};
 use ark_ec::AffineRepr;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::io::Cursor;
+use ark_std::{io::Cursor, vec::Vec};
 
 /// A proof of some statement specified by a
 /// [`ConstraintSystem`](::r1cs::ConstraintSystem).

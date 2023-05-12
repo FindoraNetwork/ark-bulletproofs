@@ -4,8 +4,10 @@ use ark_ff::PrimeField;
 use ark_std::{
     iter::FromIterator,
     ops::{Add, Mul, Neg, Sub},
+    vec,
+    vec::Vec,
 };
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 /// Represents a variable in a constraint system.
 #[derive(Copy, Clone, Debug, PartialEq)]
