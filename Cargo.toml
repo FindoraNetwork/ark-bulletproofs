@@ -1,6 +1,6 @@
 [package]
 name = "ark-bulletproofs"
-version = "4.0.0"
+version = "4.1.0"
 authors = ["Cathie Yun <cathieyun@gmail.com>", 
            "Henry de Valence <hdevalence@hdevalence.ca>",
            "Oleg Andreev <oleganza@gmail.com>",
